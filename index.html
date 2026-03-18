@@ -25,6 +25,13 @@
   #overlay.gone{opacity:0;pointer-events:none} #overlay small{font-size:.6em;color:#6e7681} #overlay.err{color:#f87171}
   #open-btn{cursor:pointer;background:#21262d;border:1px solid #58a6ff;color:#58a6ff;padding:10px 28px;border-radius:7px;font-size:1em}
   #open-btn:hover{background:#1c3a5e}
+  #about{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);z-index:30}
+  #about-box{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:24px 28px;font-size:12px;line-height:2;min-width:260px;position:relative}
+  #about-box h3{color:#58a6ff;margin-bottom:8px;font-size:13px}
+  #about-box a{color:#58a6ff;text-decoration:none}
+  #about-box a:hover{text-decoration:underline}
+  #about-close{position:absolute;top:10px;right:12px;cursor:pointer;color:#6e7681;font-size:16px;line-height:1}
+  #about-close:hover{color:#c9d1d9}
   #tooltip{position:absolute;bottom:12px;left:12px;display:none;background:rgba(13,17,23,.92);border:1px solid #30363d;border-radius:6px;padding:6px 11px;font-size:11px;pointer-events:none;z-index:10;color:#8b949e}
   #tooltip b{color:#c9d1d9}
   #fname{position:absolute;top:12px;right:12px;background:rgba(13,17,23,.75);border:1px solid #30363d;border-radius:5px;padding:4px 10px;font-size:11px;color:#6e7681;z-index:10;pointer-events:none;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -43,8 +50,19 @@
     <h3>Vrstvy <span style="color:#6e7681;font-weight:normal;font-size:10px">(klik = skrýt/zobrazit)</span></h3>
     <div id="legend"></div>
   </div>
-  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button></div></div>
+  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
   <div class="panel" id="hint">Orbit: LMB &nbsp;|&nbsp; Pan: RMB &nbsp;|&nbsp; Zoom: kolečko<br>Hover = souřadnice</div>
+</div>
+<div id="about" onclick="if(event.target===this)this.style.display='none'">
+  <div id="about-box">
+    <span id="about-close" onclick="document.getElementById('about').style.display='none'">✕</span>
+    <h3>JVF DTM Viewer</h3>
+    <div><b>Autor:</b> Ing. Jiří Vejda</div>
+    <div><b>Telefon:</b> <a href="tel:+420773670515">+420 773 670 515</a></div>
+    <div><b>E-mail:</b> <a href="mailto:jiri.vejda@gmail.com">jiri.vejda@gmail.com</a></div>
+    <div><b>Web:</b> <a href="http://www.vejda.cz" target="_blank">www.vejda.cz</a></div>
+    <div style="margin-top:8px"><b>Adresa:</b><br>Nad školou 1163/5<br>Rousínov u Vyškova<br>683 01<br>Česká Republika</div>
+  </div>
 </div>
 <div id="tooltip"></div>
 <script src="libs/three.min.js"></script>
