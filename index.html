@@ -290,6 +290,10 @@ for(const [k,v] of Object.entries(SCHEMA_LAYERS))
   LAYERS[k] = Object.assign({}, v, MY_COLORS[k]||{});
 function hashColor(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h)^s.charCodeAt(i);return((h>>>0)&0xFFFFFF)|0x404040;}
 function layerCfg(n,g){return LAYERS[n]||{color:hashColor(n),sz:g==='pt'?3:1,type:g,group:'Neznámé'};}
+function isKnown(n){return !!LAYERS[n];}
+
+// Metadata boundaries (treated like OblastZmeny - hidden, excluded from fit)
+const META_SECTIONS = ['OblastZmeny','ObvodDatoveSady'];
 
 const GML='http://www.opengis.net/gml/3.2';
 const scene=new THREE.Scene();
@@ -304,7 +308,28 @@ controls.enableDamping=true;controls.dampingFactor=0.1;controls.enableZoom=false
 scene.add(new THREE.GridHelper(200,40,0x1c2128,0x161b22));
 window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 
-let objs=[],vis={},hits=[],box=null,orig=null;
+// objs: {mesh, layerKey, zapis}
+// vis:  layerKey → bool
+// zapisVis: zapis letter → bool
+let objs=[],vis={},hits=[],orig=null;
+let zapisVis={i:true, u:true, r:true, d:false};
+
+function meshShouldBeVisible(o){
+  return vis[o.layerKey] && zapisVis[o.zapis];
+}
+function reapplyVisibility(){
+  for(const o of objs) o.mesh.visible = meshShouldBeVisible(o);
+}
+
+// Recompute fit box from currently visible meshes
+function computeFitBox(){
+  const b=new THREE.Box3();
+  for(const o of objs){
+    if(o.mesh.visible && !META_SECTIONS.includes(o.layerKey))
+      b.union(new THREE.Box3().setFromObject(o.mesh));
+  }
+  return b.isEmpty()?null:b;
+}
 
 function readFile(f){
   if(!f)return;
@@ -321,27 +346,41 @@ function showErr(m){const o=document.getElementById('overlay');o.classList.remov
 function upTo(node,names){let n=node.parentNode;while(n&&n.nodeType===1){if(names.indexOf(n.localName)!==-1)return n;n=n.parentNode;}return null;}
 function dataSection(node){let n=node.parentNode;while(n&&n.nodeType===1){if(n.parentNode&&n.parentNode.localName==='Data')return n;n=n.parentNode;}return null;}
 function nums(text){return text.trim().split(/\s+/).map(parseFloat).filter(v=>!isNaN(v));}
-function zapisObjektu(node){const z=upTo(node,['ZaznamObjektu']);if(!z)return 'i';for(const c of z.childNodes)if(c.localName==='ZapisObjektu')return c.textContent.trim();return 'i';}
+function zapisObjektu(node){
+  const z=upTo(node,['ZaznamObjektu']);
+  if(!z)return 'i';
+  for(const c of z.childNodes)if(c.localName==='ZapisObjektu')return c.textContent.trim();
+  return 'i';
+}
 function sc(Y,X,H){return new THREE.Vector3(Y-orig.Y,(H||0)-orig.H,-(X-orig.X));}
 
 function parse(xml){
   for(const {mesh} of objs)scene.remove(mesh);
-  objs=[];hits=[];vis={};orig=null;box=null;
+  objs=[];hits=[];vis={};orig=null;
+  // reset zapis checkboxes
+  zapisVis={i:true,u:true,r:true,d:false};
+
   const doc=new DOMParser().parseFromString(xml,'application/xml');
   const perr=doc.querySelector('parsererror');
   if(perr)throw new Error('XML parse error: '+perr.textContent.slice(0,80));
-  const C={},D={};
-  function lyr(k){if(!C[k])C[k]={pts:[],lines:[]};return C[k];}
-  function del(k){if(!D[k])D[k]={pts:[],lines:[]};return D[k];}
+
+  // Collect per layer+zapis
+  // C[layerKey][zapis] = {pts:[], lines:[]}
+  const C={};
+  function bucket(k,z){
+    if(!C[k])C[k]={};
+    if(!C[k][z])C[k][z]={pts:[],lines:[]};
+    return C[k][z];
+  }
 
   const posN=doc.getElementsByTagNameNS(GML,'pos');
   for(let i=0;i<posN.length;i++){
     const v=nums(posN[i].textContent);if(v.length<2)continue;
     if(!orig)orig={Y:v[0],X:v[1],H:v[2]||0};
-    if(upTo(posN[i],['OblastZmeny']))continue;
+    if(upTo(posN[i],META_SECTIONS))continue;
     const sec=dataSection(posN[i]);const k=sec?sec.localName:'_pt';
-    const pt={Y:v[0],X:v[1],H:v[2]||0};
-    (zapisObjektu(posN[i])==='d'?del(k):lyr(k)).pts.push(pt);
+    const z=zapisObjektu(posN[i]);
+    bucket(k,z).pts.push({Y:v[0],X:v[1],H:v[2]||0});
   }
   const plN=doc.getElementsByTagNameNS(GML,'posList');
   for(let i=0;i<plN.length;i++){
@@ -352,94 +391,162 @@ function parse(xml){
     if(!orig)orig={Y:v[0],X:v[1],H:v[2]||0};
     const pts=[];for(let j=0;j+dim-1<v.length;j+=dim)pts.push({Y:v[j],X:v[j+1],H:v[j+2]||0});
     let k='_ln';
-    if(upTo(node,['OblastZmeny'])){k='OblastZmeny';}
-    else{const sec=dataSection(node);if(sec)k=sec.localName;}
-    (zapisObjektu(node)==='d'?del(k):lyr(k)).lines.push(pts);
+    if(upTo(node,META_SECTIONS)){
+      // detect which meta section
+      for(const ms of META_SECTIONS){if(upTo(node,[ms])){k=ms;break;}}
+    } else {
+      const sec=dataSection(node);if(sec)k=sec.localName;
+    }
+    const z=zapisObjektu(node);
+    bucket(k,z).pts.length===0&&0; // just ensure bucket exists
+    bucket(k,z).lines.push(pts);
   }
   if(!orig)throw new Error('Žádná data nenalezena.');
 
-  const bx=new THREE.Box3(),fitBx=new THREE.Box3();
-  let nP=0,nL=0,nDel=0;const layerStats=[];
+  let nP=0,nL=0;
+  const layerStats=[];   // {key, cfg, gt, counts:{i,u,r,d}}
+  const zapisFound=new Set();
 
-  function buildMeshes(key,data,isDeleted){
-    const gt=data.pts.length?'pt':'ln';
+  for(const [key,byZapis] of Object.entries(C)){
+    const gt=Object.values(byZapis).some(b=>b.pts.length)?'pt':'ln';
     const cfg=layerCfg(key,gt);
-    const mk=isDeleted?key+'__del':key;
-    const color=isDeleted?0x555555:cfg.color;
-    if(data.pts.length){
-      const verts=data.pts.map(p=>{const v=sc(p.Y,p.X,p.H);bx.expandByPoint(v);if(!isDeleted)hits.push({pos3:v,raw:p,label:cfg.group+' · '+key});return v;});
-      const geo=new THREE.BufferGeometry().setFromPoints(verts);
-      const mat=new THREE.PointsMaterial({color,size:cfg.sz||3,sizeAttenuation:false,opacity:isDeleted?.45:1,transparent:isDeleted});
-      const mesh=new THREE.Points(geo,mat);scene.add(mesh);objs.push({mesh,key:mk,layerKey:key});
-      nP+=data.pts.length;
+    const known=isKnown(key);
+    const isMeta=META_SECTIONS.includes(key);
+
+    // Layer visibility: unknown or meta → off by default
+    vis[key] = known && !isMeta;
+
+    const counts={};
+    for(const [z,data] of Object.entries(byZapis)){
+      zapisFound.add(z);
+      counts[z]=(data.pts.length||0)+(data.lines.length||0);
+      const color = z==='d' ? 0x555555 : cfg.color;
+      const opacity = z==='d' ? 0.45 : 1;
+
+      if(data.pts.length){
+        const verts=data.pts.map(p=>{
+          const v=sc(p.Y,p.X,p.H);
+          if(z!=='d')hits.push({pos3:v,raw:p,label:cfg.group+' · '+key});
+          return v;
+        });
+        const geo=new THREE.BufferGeometry().setFromPoints(verts);
+        const mat=new THREE.PointsMaterial({color,size:cfg.sz||3,sizeAttenuation:false,opacity,transparent:opacity<1});
+        const mesh=new THREE.Points(geo,mat);
+        scene.add(mesh);
+        objs.push({mesh,layerKey:key,zapis:z});
+        nP+=data.pts.length;
+      }
+      if(data.lines.length){
+        const verts=[];
+        for(const line of data.lines){
+          for(let i=0;i<line.length-1;i++){
+            verts.push(sc(line[i].Y,line[i].X,line[i].H),sc(line[i+1].Y,line[i+1].X,line[i+1].H));
+          }
+          nL++;
+        }
+        const geo=new THREE.BufferGeometry().setFromPoints(verts);
+        const mat=new THREE.LineBasicMaterial({color,opacity,transparent:opacity<1});
+        const mesh=new THREE.LineSegments(geo,mat);
+        scene.add(mesh);
+        objs.push({mesh,layerKey:key,zapis:z});
+      }
     }
-    if(data.lines.length){
-      const verts=[];
-      for(const line of data.lines){for(let i=0;i<line.length-1;i++){const a=sc(line[i].Y,line[i].X,line[i].H),b=sc(line[i+1].Y,line[i+1].X,line[i+1].H);verts.push(a,b);if(!isDeleted){bx.expandByPoint(a);bx.expandByPoint(b);}}nL++;}
-      const geo=new THREE.BufferGeometry().setFromPoints(verts);
-      const mat=new THREE.LineBasicMaterial({color,opacity:isDeleted?.45:1,transparent:isDeleted});
-      const mesh=new THREE.LineSegments(geo,mat);scene.add(mesh);objs.push({mesh,key:mk,layerKey:key});
-    }
+    layerStats.push({key,cfg,gt,counts,known,isMeta});
   }
 
-  for(const [key,data] of Object.entries(C)){
-    vis[key]=key!=='OblastZmeny';
-    const gt=data.pts.length?'pt':'ln';
-    buildMeshes(key,data,false);
-    if(key!=='OblastZmeny'){const last=objs.filter(o=>o.layerKey===key).slice(-1)[0];if(last)fitBx.union(new THREE.Box3().setFromObject(last.mesh));}
-    layerStats.push({key,cfg:layerCfg(key,gt),cnt:data.pts.length||data.lines.length,gt});
-  }
-  for(const [key,data] of Object.entries(D)){
-    nDel+=data.pts.length+data.lines.length;vis[key+'__del']=false;
-    buildMeshes(key,data,true);
-    for(const o of objs)if(o.key===key+'__del')o.mesh.visible=false;
-  }
-  box=fitBx.isEmpty()?bx:fitBx;
-  for(const o of objs)if(o.key==='OblastZmeny')o.mesh.visible=false;
+  // Apply initial visibility
+  reapplyVisibility();
 
-  document.getElementById('stats').innerHTML=
-    `<b>${nP}</b> bodů &nbsp;|&nbsp; <b>${nL}</b> linií`+
-    (nDel?` &nbsp;|&nbsp; <span style="color:#555">${nDel} smazaných</span>`:'');
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  document.getElementById('stats').innerHTML=`<b>${nP}</b> bodů &nbsp;|&nbsp; <b>${nL}</b> linií`;
 
+  // ── Legend ─────────────────────────────────────────────────────────────────
   const leg=document.getElementById('legend');leg.innerHTML='';
-  layerStats.sort((a,b)=>a.cfg.group.localeCompare(b.cfg.group)||a.key.localeCompare(b.key));
+
+  // Zapis checkboxes at top
+  const zapLabels={i:'Vložené (i)',u:'Upravené (u)',r:'Referenční (r)',d:'Smazané (d)'};
+  const zapColors={i:'#c9d1d9',u:'#93c5fd',r:'#86efac',d:'#555'};
+  const zapOrder=['i','u','r','d'].filter(z=>zapisFound.has(z));
+  if(zapOrder.length>0){
+    const hdr=document.createElement('div');
+    hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 3px;letter-spacing:.04em;text-transform:uppercase';
+    hdr.textContent='Záznamy';leg.appendChild(hdr);
+    const zapRow=document.createElement('div');
+    zapRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:4px';
+    for(const z of zapOrder){
+      const wrap=document.createElement('label');
+      wrap.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px';
+      const cb=document.createElement('input');
+      cb.type='checkbox';cb.checked=zapisVis[z]!==false;
+      cb.style.cssText='cursor:pointer;accent-color:#58a6ff;flex-shrink:0';
+      cb.addEventListener('change',()=>{
+        zapisVis[z]=cb.checked;
+        reapplyVisibility();
+        // recompute fit box silently (don't move camera)
+      });
+      const sp=document.createElement('span');
+      sp.style.color=zapColors[z]||'#c9d1d9';
+      sp.textContent=zapLabels[z]||z;
+      wrap.appendChild(cb);wrap.appendChild(sp);
+      zapRow.appendChild(wrap);
+    }
+    leg.appendChild(zapRow);
+    const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #21262d;margin:4px 0 5px';leg.appendChild(sep);
+  }
+
+  // Layer rows grouped
+  layerStats.sort((a,b)=>{
+    // unknown last, then meta, then by group+key
+    if(a.known!==b.known)return a.known?-1:1;
+    if(a.isMeta!==b.isMeta)return a.isMeta?1:-1;
+    return a.cfg.group.localeCompare(b.cfg.group)||a.key.localeCompare(b.key);
+  });
   let lastGroup=null;
-  for(const {key,cfg,cnt,gt} of layerStats){
-    if(cfg.group!==lastGroup){
+  for(const {key,cfg,gt,counts,known,isMeta} of layerStats){
+    const grp=cfg.group+(isMeta?' (meta)':!known?' (neznámé)':'');
+    if(grp!==lastGroup){
       if(lastGroup!==null){const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #21262d;margin:4px 0 2px';leg.appendChild(sep);}
-      const hdr=document.createElement('div');hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 1px;letter-spacing:.04em;text-transform:uppercase';hdr.textContent=cfg.group;leg.appendChild(hdr);
-      lastGroup=cfg.group;
+      const hdr=document.createElement('div');
+      hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 1px;letter-spacing:.04em;text-transform:uppercase';
+      hdr.textContent=grp;leg.appendChild(hdr);
+      lastGroup=grp;
     }
     const col='#'+new THREE.Color(cfg.color||0x888888).getHexString();
+    const total=Object.values(counts).reduce((a,b)=>a+b,0);
     const row=document.createElement('div');row.className='legend-row';
-    if(key==='OblastZmeny')row.classList.add('off');
-    row.innerHTML=`<span class="${gt==='ln'?'sw-line':'sw-dot'}" style="background:${col}"></span><span class="lbl">${key} <span style="color:#6e7681">(${cnt})</span></span>`;
-    row.addEventListener('click',()=>{vis[key]=!vis[key];for(const o of objs)if(o.key===key)o.mesh.visible=vis[key];row.classList.toggle('off',!vis[key]);});
+    if(!vis[key])row.classList.add('off');
+    row.innerHTML=`<span class="${gt==='ln'?'sw-line':'sw-dot'}" style="background:${col}"></span><span class="lbl">${key} <span style="color:#6e7681">(${total})</span></span>`;
+    row.addEventListener('click',()=>{
+      vis[key]=!vis[key];
+      reapplyVisibility();
+      row.classList.toggle('off',!vis[key]);
+    });
     leg.appendChild(row);
   }
-  if(nDel>0){
-    const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #30363d;margin:6px 0 3px';leg.appendChild(sep);
-    const row=document.createElement('div');row.className='legend-row';row.style.gap='8px';
-    const cb=document.createElement('input');cb.type='checkbox';cb.checked=false;cb.style.cssText='cursor:pointer;accent-color:#888;flex-shrink:0';
-    const lbl=document.createElement('label');lbl.style.cursor='pointer';lbl.innerHTML=`<span style="color:#555">Smazané záznamy (${nDel})</span>`;
-    cb.addEventListener('change',()=>{for(const o of objs)if(o.key.endsWith('__del'))o.mesh.visible=cb.checked;});
-    row.appendChild(cb);row.appendChild(lbl);leg.appendChild(row);
-  }
+
   document.getElementById('lpanel').style.display='';
   fitCam();
   document.getElementById('overlay').classList.add('gone');
 }
 
+// Fit uses only currently visible non-meta meshes
 function fitCam(){
-  if(!box)return;const c=new THREE.Vector3(),s=new THREE.Vector3();
-  box.getCenter(c);box.getSize(s);const r=Math.max(s.x,s.z)*0.9+1;
-  controls.target.set(c.x,0,c.z);camera.position.set(c.x+r,r*0.8,c.z+r);
-  camera.near=r*0.0005;camera.far=r*30;camera.updateProjectionMatrix();controls.update();
+  const b=computeFitBox(); if(!b)return;
+  const c=new THREE.Vector3(),s=new THREE.Vector3();
+  b.getCenter(c);b.getSize(s);
+  const r=Math.max(s.x,s.z)*0.9+1;
+  controls.target.set(c.x,0,c.z);
+  camera.position.set(c.x+r,r*0.8,c.z+r);
+  camera.near=r*0.0005;camera.far=r*30;
+  camera.updateProjectionMatrix();controls.update();
 }
 function topCam(){
-  if(!box)return;const c=new THREE.Vector3(),s=new THREE.Vector3();
-  box.getCenter(c);box.getSize(s);const d=Math.max(s.x,s.z)*1.2+1;
-  controls.target.set(c.x,0,c.z);camera.position.set(c.x,d,c.z+0.001);controls.update();
+  const b=computeFitBox(); if(!b)return;
+  const c=new THREE.Vector3(),s=new THREE.Vector3();
+  b.getCenter(c);b.getSize(s);
+  const d=Math.max(s.x,s.z)*1.2+1;
+  controls.target.set(c.x,0,c.z);
+  camera.position.set(c.x,d,c.z+0.001);controls.update();
 }
 
 const mouse=new THREE.Vector2(-9999,-9999);
@@ -454,9 +561,10 @@ renderer.domElement.addEventListener('wheel',e=>{
 const caster=new THREE.Raycaster();
 window.addEventListener('mousemove',e=>{mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;});
 function updateTip(){
-  if(!hits.length||!box)return;
+  if(!hits.length)return;
+  const b=computeFitBox();if(!b)return;
   caster.setFromCamera(mouse,camera);
-  const sz=new THREE.Vector3();box.getSize(sz);const thr=sz.length()*0.015;
+  const sz=new THREE.Vector3();b.getSize(sz);const thr=sz.length()*0.015;
   let best=null,bd=Infinity;
   for(const h of hits){const d=caster.ray.distanceToPoint(h.pos3);if(d<bd){bd=d;best=h;}}
   const tt=document.getElementById('tooltip');
