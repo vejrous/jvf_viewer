@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<title>JVF DTM Viewer</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d1117;overflow:hidden;font-family:'Consolas',monospace;color:#c9d1d9}
+  #ui{position:absolute;top:12px;left:12px;display:flex;flex-direction:column;gap:8px;
+      width:240px;pointer-events:none;z-index:10;max-height:calc(100vh - 24px)}
+  .panel{background:rgba(13,17,23,.88);border:1px solid #30363d;border-radius:6px;
+         padding:9px 13px;font-size:11.5px;line-height:1.65;pointer-events:auto;backdrop-filter:blur(4px)}
+  .panel h3{color:#58a6ff;font-size:12.5px;margin-bottom:5px}
+  #stats{color:#8b949e} #stats b{color:#c9d1d9}
+  #lpanel{overflow-y:auto;flex-shrink:1;min-height:0}
+  .legend-row{display:flex;align-items:center;gap:6px;margin:1px 0;cursor:pointer;user-select:none;font-size:11px}
+  .legend-row:hover .lbl{color:#e6edf3} .legend-row.off{opacity:.3}
+  .sw-line{width:16px;height:2px;border-radius:1px;flex-shrink:0}
+  .sw-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+  .btn-row{display:flex;gap:6px}
+  button{background:#21262d;border:1px solid #30363d;color:#c9d1d9;padding:4px 10px;border-radius:5px;cursor:pointer;font-size:11.5px}
+  button:hover{background:#30363d}
+  #hint{color:#6e7681;font-size:10.5px;pointer-events:none}
+  #overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(13,17,23,.97);font-size:1.1em;color:#58a6ff;z-index:20;transition:opacity .3s}
+  #overlay.gone{opacity:0;pointer-events:none} #overlay small{font-size:.6em;color:#6e7681} #overlay.err{color:#f87171}
+  #open-btn{cursor:pointer;background:#21262d;border:1px solid #58a6ff;color:#58a6ff;padding:10px 28px;border-radius:7px;font-size:1em}
+  #open-btn:hover{background:#1c3a5e}
+  #tooltip{position:absolute;bottom:12px;left:12px;display:none;background:rgba(13,17,23,.92);border:1px solid #30363d;border-radius:6px;padding:6px 11px;font-size:11px;pointer-events:none;z-index:10;color:#8b949e}
+  #tooltip b{color:#c9d1d9}
+  #fname{position:absolute;top:12px;right:12px;background:rgba(13,17,23,.75);border:1px solid #30363d;border-radius:5px;padding:4px 10px;font-size:11px;color:#6e7681;z-index:10;pointer-events:none;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <label id="open-btn">📂 Otevřít JVF XML soubor<input type="file" accept=".xml,.jvf" id="file-input" style="display:none"></label>
+  <small>nebo přetáhněte soubor sem</small>
+  <small id="omsg">EPSG:5514 &nbsp;·&nbsp; JVF DTM 1.4.3</small>
+</div>
+<div id="fname"></div>
+<div id="ui">
+  <div class="panel"><h3>JVF DTM Viewer</h3><div id="stats">Čeká na soubor…</div></div>
+  <div class="panel" id="lpanel" style="display:none">
+    <h3>Vrstvy <span style="color:#6e7681;font-weight:normal;font-size:10px">(klik = skrýt/zobrazit)</span></h3>
+    <div id="legend"></div>
+  </div>
+  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button></div></div>
+  <div class="panel" id="hint">Orbit: LMB &nbsp;|&nbsp; Pan: RMB &nbsp;|&nbsp; Zoom: kolečko<br>Hover = souřadnice</div>
+</div>
+<div id="tooltip"></div>
+<script src="libs/three.min.js"></script>
+<script src="libs/OrbitControls.js"></script>
+<script src="colors.js"></script>
+<script>
+if(typeof THREE==='undefined'){document.getElementById('omsg').textContent='Chyba: libs/three.min.js nenalezeno – spustte download_libs.bat';document.getElementById('overlay').classList.add('err');throw new Error('THREE not loaded');}
+</script>
+<script>
+// AUTO-GENERATED from JVF DTM XSD 1.4.3 — DO NOT EDIT (use MY_COLORS overrides)
+const SCHEMA_LAYERS = {
+  // ── Budovy
+  BudovaDefinicniBod: {color:0xff4444, sz:6, type:'pt', group:'Budovy'},
+  HraniceBudovy: {color:0xff4444, sz:1, type:'ln', group:'Budovy'},
+  VnitrniCleneniBudovStaveb: {color:0xff4444, sz:1, type:'ln', group:'Budovy'},
+  // ── Doprava
+  ChodnikDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  CyklistickaDopravaKoridorZameruLinie: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  CyklistickaDopravaMistoZameruBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  CyklostezkaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  DeliciPasDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  DopravneVyznamneMistoDrazeBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  DopravniOstruvekDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  DopravniUzelSilnicniSite: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  DrazniDopravaKoridorZameruLinie: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  DrazniDopravaMistoZameruBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  HraniceDopravniStavbyPlochy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  ManipulacniPlochaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  MostniVahaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  NajezdDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  NastupisteDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  OsaKolejePozemniLanoveDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaKolejeSpecialniDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaKolejeTramvajoveDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaKolejeZeleznicniTrate: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaPozemniKomunikace: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaPozemniLanoveDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaSpecialniDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaTramvajoveDrahy: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  OsaZeleznicniTrate: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  ParkovisteOdstavnaPlochaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PlochaMostniKonstrukceDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PortalPodchoduDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PortalTuneluDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PozemniLanovaDrahaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PridruzenaPlochaPozemniKomunikaceDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  PrikopNasepZarezDopravniStavbyDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  ProtihlukovaStena: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  ProvozniPlochaPodchoduDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  ProvozniPlochaPozemniKomunikaceDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  ProvozniPlochaTuneluDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  SilnicniDopravaKoridorZameruLinie: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  SilnicniDopravaMistoZameruBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  SouhrnnaPlochaZeleznicnichDrahDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  SpecialniDrahaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  StojanNabijeniVydejniStojan: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  Svodidlo: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  TerenniHrana: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  TerminalKombinovaneDopravyMistoZameruBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  TramvajovaDrahaDefinicniBod: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  VisutaLanovaDraha: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  VytahVChodniku: {color:0xfda4af, sz:5, type:'pt', group:'Doprava'},
+  Zabradli: {color:0xfda4af, sz:1, type:'ln', group:'Doprava'},
+  // ── Elektrické sítě
+  ElektrickaSitKoridorZameruLinie: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  ElektrickaSitMistoZameruBod: {color:0xfbbf24, sz:5, type:'pt', group:'Elektrické sítě'},
+  ElektronickaKomunikaceKoridorZameruLinie: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  ElektronickaKomunikaceMistoZameruBod: {color:0xfbbf24, sz:5, type:'pt', group:'Elektrické sítě'},
+  StaniceElektrickeSiteBod: {color:0xfbbf24, sz:5, type:'pt', group:'Elektrické sítě'},
+  TrasaElektrickeSite: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  TrasaMistniElektrickeSite: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  TrasaOdbernehoElektrickehoZarizeni: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  TrasaRadiovehoSmerovehoSpoje: {color:0xfbbf24, sz:1, type:'ln', group:'Elektrické sítě'},
+  VyrobnaElektrinyNad50kWBod: {color:0xfbbf24, sz:5, type:'pt', group:'Elektrické sítě'},
+  ZarizeniElektrickeSite: {color:0xfbbf24, sz:5, type:'pt', group:'Elektrické sítě'},
+  // ── Geodetické body
+  IdentickyBod: {color:0x4ade80, sz:4, type:'pt', group:'Geodetické body'},
+  PodrobnyBodZPS: {color:0x4ade80, sz:4, type:'pt', group:'Geodetické body'},
+  VyskovyBodNaTerenu: {color:0x4ade80, sz:4, type:'pt', group:'Geodetické body'},
+  // ── Letectvo
+  HeliportBod: {color:0x93c5fd, sz:5, type:'pt', group:'Letectvo'},
+  LeteckaDopravaKoridorZameruLinie: {color:0x93c5fd, sz:1, type:'ln', group:'Letectvo'},
+  LeteckaDopravaMistoZameruBod: {color:0x93c5fd, sz:5, type:'pt', group:'Letectvo'},
+  LeteckaStavbaBod: {color:0x93c5fd, sz:5, type:'pt', group:'Letectvo'},
+  ZarizeniProLeteckyProvoz: {color:0x93c5fd, sz:5, type:'pt', group:'Letectvo'},
+  // ── Odpady / ostatní
+  DrobnaKulturniStavbaBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  DrobnaKulturniStavbaDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  DrobnaSakralniStavbaBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  DrobnaSakralniStavbaDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  DvurNadvoriDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  JineZarizeniOdstranovaniVyuzivaniSberOdpaduBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  NeidentifikovanyObjekt: {color:0xa8a29e, sz:1, type:'ln', group:'Odpady / ostatní'},
+  OdkalisteBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  OdpadoveHospodarstviZamerBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  OdpadoveHospodarstviZamerLinie: {color:0xa8a29e, sz:1, type:'ln', group:'Odpady / ostatní'},
+  PlochaRekultivaceDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  PozemniCastPristavuBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  SkladkaOdpaduBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  SpalovnaBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  StupenBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  StupenDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  UlozneMistoTezebnihoOdpaduDefinicniBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  VodniCastPristavuBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  VodniDopravaKoridorZameruLinie: {color:0xa8a29e, sz:1, type:'ln', group:'Odpady / ostatní'},
+  VodniDopravaMistoZameruBod: {color:0xa8a29e, sz:4, type:'pt', group:'Odpady / ostatní'},
+  // ── Plot
+  Plot: {color:0xf97316, sz:1, type:'ln', group:'Plot'},
+  // ── Plynovodní sítě
+  PlynovodKoridorZameruLinie: {color:0xa78bfa, sz:1, type:'ln', group:'Plynovodní sítě'},
+  PlynovodMistoZameruBod: {color:0xa78bfa, sz:5, type:'pt', group:'Plynovodní sítě'},
+  TechnologickyObjektPlynovodniSiteBod: {color:0xa78bfa, sz:5, type:'pt', group:'Plynovodní sítě'},
+  TrasaOdbernehoPlynovehoZarizeni: {color:0xa78bfa, sz:1, type:'ln', group:'Plynovodní sítě'},
+  TrasaPlynovodniPripojky: {color:0xa78bfa, sz:1, type:'ln', group:'Plynovodní sítě'},
+  TrasaPlynovodniSite: {color:0xa78bfa, sz:1, type:'ln', group:'Plynovodní sítě'},
+  ZarizeniPlynovodniSite: {color:0xa78bfa, sz:5, type:'pt', group:'Plynovodní sítě'},
+  // ── Podzemní / spec.
+  HranicePodzemnihoObjektuZPS: {color:0xfca5a5, sz:1, type:'ln', group:'Podzemní / spec.'},
+  JaderneZarizeniBod: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  JineDulniDiloStavbaDefinicniBod: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  KominDefinicniBod: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  OchrannaSachtaVrtu: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  PodzemniObjektZPSDefinicniBod: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  SklenikDefinicniBod: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  Vrt: {color:0xfca5a5, sz:5, type:'pt', group:'Podzemní / spec.'},
+  // ── Stavby – zpevnění
+  HraniceSchodiste: {color:0x60a5fa, sz:1, type:'ln', group:'Stavby – zpevnění'},
+  HraniceStavby: {color:0x60a5fa, sz:1, type:'ln', group:'Stavby – zpevnění'},
+  OstatniZastresenaStavbaDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  PatkaDeskaMonolitPilirDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  PodezdivkaDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  RampaDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  SchodisteDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  StavbaProZpevneniPovrchuDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  StavebneUpravenyVjezdNaPozemek: {color:0x60a5fa, sz:1, type:'ln', group:'Stavby – zpevnění'},
+  TerasaDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  VnitrniCleneniDopravniPlochy: {color:0x60a5fa, sz:1, type:'ln', group:'Stavby – zpevnění'},
+  ZastreseniDefinicniBod: {color:0x60a5fa, sz:5, type:'pt', group:'Stavby – zpevnění'},
+  // ── TI sítě – ostatní
+  CeloPropustkuDefinicniBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  JinaTechnologickaStavbaTI: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  JineZarizeniStavebTI: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  Kolektor: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  NosicTechnickehoZarizeni: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  OrientacniSloupekTI: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  PodperneZarizeni: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  PovrchovyZnakTI: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ProduktovodKoridorZameruLinie: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  ProduktovodMistoZameruBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  PrubehJineTechnologickeStavbyTI: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  PrubehPropustku: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  PrubehTechnologickeKonstrukce: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  SdilenaStavbaTIKoridorZameruLinie: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  SdilenyObjektTI: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  SloupTechnologickeKonstrukce: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  TechnickyKanal: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TechnologickyObjektSiteEKBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  TechnologickyObjektSiteProduktovoduBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  TechnologickyObjektTeplovodniSiteBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  TeplovodKoridorZameruLinie: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TeplovodMistoZameruBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  TrasaPotrubniPosty: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TrasaProtikorozniOchrany: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TrasaSiteEK: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TrasaSiteProduktovodu: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  TrasaTeplovodniSite: {color:0xf472b6, sz:1, type:'ln', group:'TI sítě – ostatní'},
+  ZarizeniPotrubniPosty: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ZarizeniPrivadece: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ZarizeniProtikorozniOchranyBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ZarizeniSiteEK: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ZarizeniSiteProduktovoduBod: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  ZarizeniTeplovodniSite: {color:0xf472b6, sz:5, type:'pt', group:'TI sítě – ostatní'},
+  // ── Vegetace / plochy
+  DulLomDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  HospodarskyNevyuzivanaPlochaDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  HraniceOstatniPlochy: {color:0x86efac, sz:1, type:'ln', group:'Vegetace / plochy'},
+  HranicePrirodnihoPoloprirodnihoObjektu: {color:0x86efac, sz:1, type:'ln', group:'Vegetace / plochy'},
+  HraniceUdrzovaneZelene: {color:0x86efac, sz:1, type:'ln', group:'Vegetace / plochy'},
+  HrbitovDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  HristeDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  LesDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  UdrzovanaPlochaZeleneDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  VegetacniMisaDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  ZahradaDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  ZemedelskaPlochaDefinicniBod: {color:0x86efac, sz:5, type:'pt', group:'Vegetace / plochy'},
+  // ── Vodovod / kanalizace
+  HraniceZarizeniKanalizacniPripojky: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  HraniceZarizeniVodovodniPripojky: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  KanalizaceKoridorZameruLinie: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  KanalizaceMistoZameruBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ObjektStokoveSiteBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ObjektVodovodniSiteBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  TrasaKanalizacniPripojky: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  TrasaStokoveSite: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  TrasaVodovodniPripojky: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  TrasaVodovodniSite: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  VodovodKoridorZameruLinie: {color:0x34d399, sz:1, type:'ln', group:'Vodovod / kanalizace'},
+  VodovodMistoZameruBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ZarizeniKanalizacniPripojkyBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ZarizeniKanalizacniPripojkyDefinicniBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ZarizeniVodovodniPripojkyBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  ZarizeniVodovodniPripojkyDefinicniBod: {color:0x34d399, sz:5, type:'pt', group:'Vodovod / kanalizace'},
+  // ── Vodstvo
+  HraniceVodnihoDila: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  HrazDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  JezDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  JezeroDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  MelioracniPrikopZlabDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  MelioracniSachta: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  NadrzBezVzdouvacihoObjektuDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  NadrzZdrzSeVzdouvacimObjektemDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ObjektOdvodneniStavbyBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ObjektOdvodneniStavbyLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  ObjektZarizeniOchranaPredPovodnemiBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ObjektZarizeniOchranaPredPovodnemiLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  OsaMelioracnihoPrikopuZlabuDrenu: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  OsaProtipovodnoveZabrany: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  PlavebniKomoraBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  PrivadecNahonOdpadLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  PrivadecPovrchovychVodKoridorZameruLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  ProtipovodnovaZabranaDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ProtipovodnovaZabranaLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  ProtipovodnoveOpatreniKoridorZameruLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  SledovanaVodniCestaLinie: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  StavebneUpraveneKorytoDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  SterkovaPrehrazkaDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  StudnaNaVerejnemProstranstvi: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  SuchaNadrzDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  VodniTokDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ZahradniBazenDefinicniBod: {color:0x38bdf8, sz:5, type:'pt', group:'Vodstvo'},
+  ZatrubnenyVodniTok: {color:0x38bdf8, sz:1, type:'ln', group:'Vodstvo'},
+  // ── Zdi
+  HraniceZdi: {color:0xfacc15, sz:1, type:'ln', group:'Zdi'},
+  ZedDefinicniBod: {color:0xfacc15, sz:5, type:'pt', group:'Zdi'},
+  ZedLinie: {color:0xfacc15, sz:1, type:'ln', group:'Zdi'},
+};
+</script>
+<script>
+
+const MY_COLORS = window.MY_COLORS || {};
+const LAYERS = {};
+for(const [k,v] of Object.entries(SCHEMA_LAYERS))
+  LAYERS[k] = Object.assign({}, v, MY_COLORS[k]||{});
+function hashColor(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h)^s.charCodeAt(i);return((h>>>0)&0xFFFFFF)|0x404040;}
+function layerCfg(n,g){return LAYERS[n]||{color:hashColor(n),sz:g==='pt'?3:1,type:g,group:'Neznámé'};}
+
+const GML='http://www.opengis.net/gml/3.2';
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0d1117);
+const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.01,1e6);
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(devicePixelRatio);
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.dampingFactor=0.1;controls.enableZoom=false;
+scene.add(new THREE.GridHelper(200,40,0x1c2128,0x161b22));
+window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+
+let objs=[],vis={},hits=[],box=null,orig=null;
+
+function readFile(f){
+  if(!f)return;
+  document.getElementById('fname').textContent=f.name;
+  const r=new FileReader();
+  r.onload=ev=>{try{parse(ev.target.result);}catch(e){showErr(e.message);console.error(e);}};
+  r.readAsText(f,'UTF-8');
+}
+document.getElementById('file-input').addEventListener('change',function(){readFile(this.files[0]);});
+['dragenter','dragover','dragleave','drop'].forEach(n=>document.addEventListener(n,e=>{e.preventDefault();e.stopPropagation();}));
+document.addEventListener('drop',e=>readFile(e.dataTransfer.files[0]));
+function showErr(m){const o=document.getElementById('overlay');o.classList.remove('gone');o.classList.add('err');document.getElementById('omsg').textContent='Chyba: '+m;}
+
+function upTo(node,names){let n=node.parentNode;while(n&&n.nodeType===1){if(names.indexOf(n.localName)!==-1)return n;n=n.parentNode;}return null;}
+function dataSection(node){let n=node.parentNode;while(n&&n.nodeType===1){if(n.parentNode&&n.parentNode.localName==='Data')return n;n=n.parentNode;}return null;}
+function nums(text){return text.trim().split(/\s+/).map(parseFloat).filter(v=>!isNaN(v));}
+function zapisObjektu(node){const z=upTo(node,['ZaznamObjektu']);if(!z)return 'i';for(const c of z.childNodes)if(c.localName==='ZapisObjektu')return c.textContent.trim();return 'i';}
+function sc(Y,X,H){return new THREE.Vector3(Y-orig.Y,(H||0)-orig.H,-(X-orig.X));}
+
+function parse(xml){
+  for(const {mesh} of objs)scene.remove(mesh);
+  objs=[];hits=[];vis={};orig=null;box=null;
+  const doc=new DOMParser().parseFromString(xml,'application/xml');
+  const perr=doc.querySelector('parsererror');
+  if(perr)throw new Error('XML parse error: '+perr.textContent.slice(0,80));
+  const C={},D={};
+  function lyr(k){if(!C[k])C[k]={pts:[],lines:[]};return C[k];}
+  function del(k){if(!D[k])D[k]={pts:[],lines:[]};return D[k];}
+
+  const posN=doc.getElementsByTagNameNS(GML,'pos');
+  for(let i=0;i<posN.length;i++){
+    const v=nums(posN[i].textContent);if(v.length<2)continue;
+    if(!orig)orig={Y:v[0],X:v[1],H:v[2]||0};
+    if(upTo(posN[i],['OblastZmeny']))continue;
+    const sec=dataSection(posN[i]);const k=sec?sec.localName:'_pt';
+    const pt={Y:v[0],X:v[1],H:v[2]||0};
+    (zapisObjektu(posN[i])==='d'?del(k):lyr(k)).pts.push(pt);
+  }
+  const plN=doc.getElementsByTagNameNS(GML,'posList');
+  for(let i=0;i<plN.length;i++){
+    const node=plN[i];
+    const lsEl=upTo(node,['LineString','LinearRing']);
+    const dim=lsEl?(parseInt(lsEl.getAttribute('srsDimension'))||3):3;
+    const v=nums(node.textContent);if(v.length<dim*2)continue;
+    if(!orig)orig={Y:v[0],X:v[1],H:v[2]||0};
+    const pts=[];for(let j=0;j+dim-1<v.length;j+=dim)pts.push({Y:v[j],X:v[j+1],H:v[j+2]||0});
+    let k='_ln';
+    if(upTo(node,['OblastZmeny'])){k='OblastZmeny';}
+    else{const sec=dataSection(node);if(sec)k=sec.localName;}
+    (zapisObjektu(node)==='d'?del(k):lyr(k)).lines.push(pts);
+  }
+  if(!orig)throw new Error('Žádná data nenalezena.');
+
+  const bx=new THREE.Box3(),fitBx=new THREE.Box3();
+  let nP=0,nL=0,nDel=0;const layerStats=[];
+
+  function buildMeshes(key,data,isDeleted){
+    const gt=data.pts.length?'pt':'ln';
+    const cfg=layerCfg(key,gt);
+    const mk=isDeleted?key+'__del':key;
+    const color=isDeleted?0x555555:cfg.color;
+    if(data.pts.length){
+      const verts=data.pts.map(p=>{const v=sc(p.Y,p.X,p.H);bx.expandByPoint(v);if(!isDeleted)hits.push({pos3:v,raw:p,label:cfg.group+' · '+key});return v;});
+      const geo=new THREE.BufferGeometry().setFromPoints(verts);
+      const mat=new THREE.PointsMaterial({color,size:cfg.sz||3,sizeAttenuation:false,opacity:isDeleted?.45:1,transparent:isDeleted});
+      const mesh=new THREE.Points(geo,mat);scene.add(mesh);objs.push({mesh,key:mk,layerKey:key});
+      nP+=data.pts.length;
+    }
+    if(data.lines.length){
+      const verts=[];
+      for(const line of data.lines){for(let i=0;i<line.length-1;i++){const a=sc(line[i].Y,line[i].X,line[i].H),b=sc(line[i+1].Y,line[i+1].X,line[i+1].H);verts.push(a,b);if(!isDeleted){bx.expandByPoint(a);bx.expandByPoint(b);}}nL++;}
+      const geo=new THREE.BufferGeometry().setFromPoints(verts);
+      const mat=new THREE.LineBasicMaterial({color,opacity:isDeleted?.45:1,transparent:isDeleted});
+      const mesh=new THREE.LineSegments(geo,mat);scene.add(mesh);objs.push({mesh,key:mk,layerKey:key});
+    }
+  }
+
+  for(const [key,data] of Object.entries(C)){
+    vis[key]=key!=='OblastZmeny';
+    const gt=data.pts.length?'pt':'ln';
+    buildMeshes(key,data,false);
+    if(key!=='OblastZmeny'){const last=objs.filter(o=>o.layerKey===key).slice(-1)[0];if(last)fitBx.union(new THREE.Box3().setFromObject(last.mesh));}
+    layerStats.push({key,cfg:layerCfg(key,gt),cnt:data.pts.length||data.lines.length,gt});
+  }
+  for(const [key,data] of Object.entries(D)){
+    nDel+=data.pts.length+data.lines.length;vis[key+'__del']=false;
+    buildMeshes(key,data,true);
+    for(const o of objs)if(o.key===key+'__del')o.mesh.visible=false;
+  }
+  box=fitBx.isEmpty()?bx:fitBx;
+  for(const o of objs)if(o.key==='OblastZmeny')o.mesh.visible=false;
+
+  document.getElementById('stats').innerHTML=
+    `<b>${nP}</b> bodů &nbsp;|&nbsp; <b>${nL}</b> linií`+
+    (nDel?` &nbsp;|&nbsp; <span style="color:#555">${nDel} smazaných</span>`:'');
+
+  const leg=document.getElementById('legend');leg.innerHTML='';
+  layerStats.sort((a,b)=>a.cfg.group.localeCompare(b.cfg.group)||a.key.localeCompare(b.key));
+  let lastGroup=null;
+  for(const {key,cfg,cnt,gt} of layerStats){
+    if(cfg.group!==lastGroup){
+      if(lastGroup!==null){const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #21262d;margin:4px 0 2px';leg.appendChild(sep);}
+      const hdr=document.createElement('div');hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 1px;letter-spacing:.04em;text-transform:uppercase';hdr.textContent=cfg.group;leg.appendChild(hdr);
+      lastGroup=cfg.group;
+    }
+    const col='#'+new THREE.Color(cfg.color||0x888888).getHexString();
+    const row=document.createElement('div');row.className='legend-row';
+    if(key==='OblastZmeny')row.classList.add('off');
+    row.innerHTML=`<span class="${gt==='ln'?'sw-line':'sw-dot'}" style="background:${col}"></span><span class="lbl">${key} <span style="color:#6e7681">(${cnt})</span></span>`;
+    row.addEventListener('click',()=>{vis[key]=!vis[key];for(const o of objs)if(o.key===key)o.mesh.visible=vis[key];row.classList.toggle('off',!vis[key]);});
+    leg.appendChild(row);
+  }
+  if(nDel>0){
+    const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #30363d;margin:6px 0 3px';leg.appendChild(sep);
+    const row=document.createElement('div');row.className='legend-row';row.style.gap='8px';
+    const cb=document.createElement('input');cb.type='checkbox';cb.checked=false;cb.style.cssText='cursor:pointer;accent-color:#888;flex-shrink:0';
+    const lbl=document.createElement('label');lbl.style.cursor='pointer';lbl.innerHTML=`<span style="color:#555">Smazané záznamy (${nDel})</span>`;
+    cb.addEventListener('change',()=>{for(const o of objs)if(o.key.endsWith('__del'))o.mesh.visible=cb.checked;});
+    row.appendChild(cb);row.appendChild(lbl);leg.appendChild(row);
+  }
+  document.getElementById('lpanel').style.display='';
+  fitCam();
+  document.getElementById('overlay').classList.add('gone');
+}
+
+function fitCam(){
+  if(!box)return;const c=new THREE.Vector3(),s=new THREE.Vector3();
+  box.getCenter(c);box.getSize(s);const r=Math.max(s.x,s.z)*0.9+1;
+  controls.target.set(c.x,0,c.z);camera.position.set(c.x+r,r*0.8,c.z+r);
+  camera.near=r*0.0005;camera.far=r*30;camera.updateProjectionMatrix();controls.update();
+}
+function topCam(){
+  if(!box)return;const c=new THREE.Vector3(),s=new THREE.Vector3();
+  box.getCenter(c);box.getSize(s);const d=Math.max(s.x,s.z)*1.2+1;
+  controls.target.set(c.x,0,c.z);camera.position.set(c.x,d,c.z+0.001);controls.update();
+}
+
+const mouse=new THREE.Vector2(-9999,-9999);
+renderer.domElement.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const dir=new THREE.Vector3(mouse.x,mouse.y,0.5).unproject(camera).sub(camera.position).normalize();
+  const dist=camera.position.distanceTo(controls.target);
+  const move=dist*(e.deltaY>0?-0.05:0.05);
+  camera.position.addScaledVector(dir,move);controls.target.addScaledVector(dir,move);controls.update();
+},{passive:false});
+
+const caster=new THREE.Raycaster();
+window.addEventListener('mousemove',e=>{mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;});
+function updateTip(){
+  if(!hits.length||!box)return;
+  caster.setFromCamera(mouse,camera);
+  const sz=new THREE.Vector3();box.getSize(sz);const thr=sz.length()*0.015;
+  let best=null,bd=Infinity;
+  for(const h of hits){const d=caster.ray.distanceToPoint(h.pos3);if(d<bd){bd=d;best=h;}}
+  const tt=document.getElementById('tooltip');
+  if(best&&bd<thr){tt.style.display='block';tt.innerHTML=`<b>${best.label}</b><br>Y&nbsp;${best.raw.Y.toFixed(3)}<br>X&nbsp;${best.raw.X.toFixed(3)}<br>H&nbsp;${best.raw.H.toFixed(3)}`;}
+  else tt.style.display='none';
+}
+(function anim(){requestAnimationFrame(anim);controls.update();updateTip();renderer.render(scene,camera);})();
+
+</script>
+</body>
+</html>
