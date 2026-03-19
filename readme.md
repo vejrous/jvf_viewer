@@ -1,101 +1,119 @@
-# JVF DTM Viewer - Manual
+# JVF DTM Viewer – Manuál
 
 ## Popis
 
-Prohlizec geodetickych dat ve formatu JVF DTM 1.4.3.
-Zobrazuje body a linie v souradnicovem systemu S-JTSK (EPSG:5514).
-Pracuje lokalne bez serveru, bez instalace.
+Prohlížeč geodetických dat ve formátu JVF DTM 1.4.3.
+Zobrazuje body a linie v souřadnicovém systému S-JTSK (EPSG:5514).
+Pracuje lokálně bez serveru, bez instalace.
 
 
 ## Soubory
 
-    index.html        hlavni soubor, otevrit v prohlizeci
-    colors.js         nastaveni barev vrstev
+    index.html          hlavní soubor, otevřít v prohlížeči
+    colors.js           nastavení barev vrstev
+    about.js            kontaktní údaje (o aplikaci)
     libs/
-        three.min.js      knihovna 3D grafiky
-        OrbitControls.js  ovladani kamery
+        three.min.js        knihovna 3D grafiky
+        OrbitControls.js    ovládání kamery
+        CSS2DRenderer.js    vykreslování popisků bodů
 
 
-## Prvni spusteni
+## První spuštění
 
 1. Spustit download_libs.bat
-   - stahne three.min.js a OrbitControls.js do slozky libs/
-   - potrebuje pripojeni k internetu (pouze jednou)
+   - stáhne three.min.js, OrbitControls.js a CSS2DRenderer.js do složky libs/
+   - potřebuje připojení k internetu (pouze jednou)
 
-2. Otevrit index.html v prohlizeci (Chrome, Edge, Firefox)
+2. Otevřít index.html v prohlížeči (Chrome, Edge, Firefox)
 
-3. Otevrit JVF soubor
-   - kliknout na tlacitko "Otevrit JVF XML soubor"
-   - nebo pretahnout soubor do okna
+3. Otevřít JVF soubor
+   - kliknout na tlačítko "Otevřít JVF XML soubor"
+   - nebo přetáhnout soubor do okna
 
 
-## Ovladani
+## Ovládání
 
-    Levy mys (drag)      otaceni pohledu
-    Pravy mys (drag)     posun pohledu
-    Kolecko mysi         priblizeni / oddialeni ke kurzoru
-    Tlacitko Fit         nastavi pohled na vsechna data
-    Tlacitko Shora       pohled kolmo shora
+    Levé tlač. (drag)    otáčení pohledu
+    Pravé tlač. (drag)   posun pohledu
+    Kolečko myši         přiblížení / oddálení ke kurzoru
+    Fit                  nastaví pohled na viditelná data
+    Top                  pohled kolmo shora
+
+
+## Popisky bodů
+
+Tlačítka Aa a Z v panelu Body zapínají a vypínají zobrazení
+čísla bodu a výšky Z nad každým bodem ve scéně.
+Každé tlačítko funguje nezávisle.
 
 
 ## Legenda
 
-Vlevo je seznam vrstev rozdelenych do skupin.
-Kliknuti na vrstvu ji skryje nebo zobrazi.
+Vlevo je seznam vrstev rozdělených do skupin.
+Kliknutí na vrstvu ji skryje nebo zobrazí.
+Fit a Top berou v úvahu pouze aktuálně viditelné vrstvy.
 
-Smazane zaznamy (ZapisObjektu = d) jsou oddeleny a
-skryte. Zobrazit je lze zatrzenim policka "Smazane zaznamy".
+
+## Záznamy
+
+V horní části legendy jsou zaškrtávací políčka pro filtrování
+záznamů podle hodnoty ZapisObjektu:
+
+    i    vložené
+    u    upravené
+    r    referenční
+    d    smazané (skryté výchozně)
 
 
 ## Barvy vrstev
 
-Soubor colors.js obsahuje barevne nastaveni.
-Kazdy radek odpovida jednomu typu objektu.
+Soubor colors.js obsahuje barevné nastavení.
+Každý řádek odpovídá jednomu typu objektu.
 
-Priklad:
+Příklad:
 
     HraniceBudovy:   { color: 0xff4444 },
     PodrobnyBodZPS:  { color: 0x4ade80, sz: 4 },
 
-    color   barva ve formatu 0xRRGGBB (hex)
-    sz      velikost bodu nebo sirka linie v pixelech
+    color   barva ve formátu 0xRRGGBB (hex)
+    sz      velikost bodu nebo šířka linie v pixelech
 
-Po uprave souboru staci obnovit stranku v prohlizeci (F5).
-Pokud colors.js chybi, pouziji se vychozi barvy ze schematu.
+Po úpravě souboru stačí obnovit stránku v prohlížeči (F5).
+Pokud colors.js chybí, použijí se výchozí barvy ze schématu.
 
 
 ## Skupiny vrstev
 
     Geodetické body       podrobné body ZPS, výškové body
-    Budovy                hranice budov, definicni body
-    Zdi                   zdi, hranice zdi
+    Budovy                hranice budov, definiční body
+    Zdi                   zdi, hranice zdí
     Plot                  plot
-    Stavby - zpevneni     zpevnene plochy, schodiste, terasy
-    Vegetace / plochy     zahrady, les, zemedelska plocha
-    Vodstvo               vodni toky, nadrze, kanaly
-    Elektricke site       trasy, zarizeni
-    Plynovodni site       trasy, zarizeni
-    Vodovod / kanalizace  trasy, zarizeni
-    TI site - ostatni     teplovody, produktovody, kolektory
-    Doprava               komunikace, zeleznice, cyklostezky
-    Letectvo              letiste, heliporty
-    Podzemni / spec.      podzemni objekty, vrty
-    Oblast zmeny          hranice zmeny (skryta vychozne)
-    Ostatni / Nezname     typy mimo schema (automaticka barva)
+    Stavby – zpevnění     zpevněné plochy, schodiště, terasy
+    Vegetace / plochy     zahrady, les, zemědělská plocha
+    Vodstvo               vodní toky, nádrže, kanály
+    Elektrické sítě       trasy, zařízení
+    Plynovodní sítě       trasy, zařízení
+    Vodovod / kanalizace  trasy, zařízení
+    TI sítě – ostatní     teplovody, produktovody, kolektory
+    Doprava               komunikace, železnice, cyklostezky
+    Letectvo              letiště, heliporty
+    Podzemní / spec.      podzemní objekty, vrty
+    Oblast změny          hranice změny (skrytá výchozně)
+    Ostatní / Neznámé     typy mimo schéma (automatická barva)
 
 
 ## Tooltip
 
-Pri najeti mysi na bod se zobrazi souradnice:
+Při najetí myší na bod se zobrazí souřadnice:
 
     Y    easting  (S-JTSK)
     X    northing (S-JTSK)
-    H    vyska (Balt po vyrovnani)
+    H    výška (Balt po vyrovnání)
 
 
-## Poznamky
+## Poznámky
 
-- Soubor musi byt validni XML ve formatu JVF DTM
-- Podporovany format: verze 1.4.3 a kompatibilni
-- Polygony (-plocha) nejsou zobrazovany
-- Aplikace neupravuje ani neukryva puvodni soubor
+- Soubor musí být validní XML ve formátu JVF DTM
+- Podporovaný formát: verze 1.4.3 a kompatibilní
+- Polygony (-plocha) nejsou zobrazovány
+- Aplikace neupravuje ani neskrývá původní soubor
