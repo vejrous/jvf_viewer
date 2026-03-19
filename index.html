@@ -50,7 +50,7 @@
     <h3>Vrstvy <span style="color:#6e7681;font-weight:normal;font-size:10px">(klik = skrýt/zobrazit)</span></h3>
     <div id="legend"></div>
   </div>
-  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
+  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button id="btn-labels" onclick="toggleLabels()" title="Zobrazit/skrýt popisky bodů">Aa</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
   <div class="panel" id="hint">Orbit: LMB &nbsp;|&nbsp; Pan: RMB &nbsp;|&nbsp; Zoom: kolečko<br>Hover = souřadnice</div>
 </div>
 <div id="about" onclick="if(event.target===this)this.style.display='none'">
@@ -67,10 +67,9 @@
 <div id="tooltip"></div>
 <script src="libs/three.min.js"></script>
 <script src="libs/OrbitControls.js"></script>
+<script src="libs/CSS2DRenderer.js"></script>
+
 <script src="colors.js"></script>
-<script>
-if(typeof THREE==='undefined'){document.getElementById('omsg').textContent='Chyba: libs/three.min.js nenalezeno – spustte download_libs.bat';document.getElementById('overlay').classList.add('err');throw new Error('THREE not loaded');}
-</script>
 <script>
 // AUTO-GENERATED from JVF DTM XSD 1.4.3 — DO NOT EDIT (use MY_COLORS overrides)
 const SCHEMA_LAYERS = {
@@ -301,7 +300,6 @@ const SCHEMA_LAYERS = {
 };
 </script>
 <script>
-
 const MY_COLORS = window.MY_COLORS || {};
 const LAYERS = {};
 for(const [k,v] of Object.entries(SCHEMA_LAYERS))
@@ -310,45 +308,59 @@ function hashColor(s){let h=5381;for(let i=0;i<s.length;i++)h=((h<<5)+h)^s.charC
 function layerCfg(n,g){return LAYERS[n]||{color:hashColor(n),sz:g==='pt'?3:1,type:g,group:'Neznámé'};}
 function isKnown(n){return !!LAYERS[n];}
 
-// Metadata boundaries (treated like OblastZmeny - hidden, excluded from fit)
-const META_SECTIONS = ['OblastZmeny','ObvodDatoveSady'];
-
+const META_SECTIONS=['OblastZmeny','ObvodDatoveSady'];
 const GML='http://www.opengis.net/gml/3.2';
+
+// ── Scene ──────────────────────────────────────────────────────────────────────
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x0d1117);
 const camera=new THREE.PerspectiveCamera(55,innerWidth/innerHeight,0.01,1e6);
+
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(devicePixelRatio);
 renderer.setSize(innerWidth,innerHeight);
 document.body.appendChild(renderer.domElement);
+
+// CSS2D renderer — overlaid on top of WebGL canvas
+const css2d=new THREE.CSS2DRenderer();
+css2d.setSize(innerWidth,innerHeight);
+css2d.domElement.style.cssText='position:absolute;top:0;left:0;pointer-events:none';
+document.body.appendChild(css2d.domElement);
+
 const controls=new THREE.OrbitControls(camera,renderer.domElement);
 controls.enableDamping=true;controls.dampingFactor=0.1;controls.enableZoom=false;
 scene.add(new THREE.GridHelper(200,40,0x1c2128,0x161b22));
-window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
 
-// objs: {mesh, layerKey, zapis}
-// vis:  layerKey → bool
-// zapisVis: zapis letter → bool
-let objs=[],vis={},hits=[],orig=null;
-let zapisVis={i:true, u:true, r:true, d:false};
+window.addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  css2d.setSize(innerWidth,innerHeight);
+});
 
-function meshShouldBeVisible(o){
-  return vis[o.layerKey] && zapisVis[o.zapis];
-}
+// ── State ──────────────────────────────────────────────────────────────────────
+let objs=[],labelObjects=[],vis={},hits=[],orig=null;
+let zapisVis={i:true,u:true,r:true,d:false};
+let labelsOn=false;
+
+// ── Visibility ─────────────────────────────────────────────────────────────────
+function meshShouldBeVisible(o){return vis[o.layerKey]&&zapisVis[o.zapis];}
 function reapplyVisibility(){
-  for(const o of objs) o.mesh.visible = meshShouldBeVisible(o);
+  for(const o of objs) o.mesh.visible=meshShouldBeVisible(o);
+  for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
+}
+function toggleLabels(){
+  labelsOn=!labelsOn;
+  document.getElementById('btn-labels').style.background=labelsOn?'#1c3a5e':'#21262d';
+  for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
 }
 
-// Recompute fit box from currently visible meshes
 function computeFitBox(){
   const b=new THREE.Box3();
-  for(const o of objs){
-    if(o.mesh.visible && !META_SECTIONS.includes(o.layerKey))
-      b.union(new THREE.Box3().setFromObject(o.mesh));
-  }
+  for(const o of objs){if(o.mesh.visible&&!META_SECTIONS.includes(o.layerKey))b.union(new THREE.Box3().setFromObject(o.mesh));}
   return b.isEmpty()?null:b;
 }
 
+// ── File loading ───────────────────────────────────────────────────────────────
 function readFile(f){
   if(!f)return;
   document.getElementById('fname').textContent=f.name;
@@ -357,39 +369,74 @@ function readFile(f){
   r.readAsText(f,'UTF-8');
 }
 document.getElementById('file-input').addEventListener('change',function(){readFile(this.files[0]);});
-['dragenter','dragover','dragleave','drop'].forEach(n=>document.addEventListener(n,e=>{e.preventDefault();e.stopPropagation();}));
-document.addEventListener('drop',e=>readFile(e.dataTransfer.files[0]));
+// Use capture phase on window so drag events fire regardless of overlapping elements
+['dragenter','dragover','dragleave','drop'].forEach(n=>
+  window.addEventListener(n,e=>{e.preventDefault();e.stopPropagation();},true)
+);
+window.addEventListener('drop',e=>{e.preventDefault();readFile(e.dataTransfer.files[0]);},true);
 function showErr(m){const o=document.getElementById('overlay');o.classList.remove('gone');o.classList.add('err');document.getElementById('omsg').textContent='Chyba: '+m;}
 
+// ── XML helpers ────────────────────────────────────────────────────────────────
 function upTo(node,names){let n=node.parentNode;while(n&&n.nodeType===1){if(names.indexOf(n.localName)!==-1)return n;n=n.parentNode;}return null;}
 function dataSection(node){let n=node.parentNode;while(n&&n.nodeType===1){if(n.parentNode&&n.parentNode.localName==='Data')return n;n=n.parentNode;}return null;}
 function nums(text){return text.trim().split(/\s+/).map(parseFloat).filter(v=>!isNaN(v));}
 function zapisObjektu(node){
-  const z=upTo(node,['ZaznamObjektu']);
-  if(!z)return 'i';
+  const z=upTo(node,['ZaznamObjektu']);if(!z)return 'i';
   for(const c of z.childNodes)if(c.localName==='ZapisObjektu')return c.textContent.trim();
   return 'i';
 }
+function getCisloBodu(posNode){
+  const zaznam=upTo(posNode,['ZaznamObjektu']);if(!zaznam)return null;
+  function find(n,name){if(n.nodeType===1&&n.localName===name)return n;for(const c of n.childNodes){const r=find(c,name);if(r)return r;}return null;}
+  const el=find(zaznam,'CisloBodu');
+  return el?el.textContent.trim().replace(/^0+/,'')||null:null;
+}
 function sc(Y,X,H){return new THREE.Vector3(Y-orig.Y,(H||0)-orig.H,-(X-orig.X));}
 
+// ── Make CSS2D label ───────────────────────────────────────────────────────────
+function makeLabel(cislo, H, hexColor){
+  const col='#'+new THREE.Color(hexColor).getHexString();
+  const div=document.createElement('div');
+  div.style.cssText=`
+    background:transparent;
+    padding:1px 3px;
+    font:11px/1.5 Consolas,monospace;
+    color:#e6edf3;
+    white-space:nowrap;
+    pointer-events:none;
+    transform:translate(-50%, -130%);
+    text-shadow:0 0 3px #0d1117,0 0 3px #0d1117,0 0 3px #0d1117;
+  `;
+  if(cislo){
+    const top=document.createElement('div');
+    top.style.cssText=`color:${col};font-weight:bold;font-size:11px`;
+    top.textContent=cislo;
+    div.appendChild(top);
+  }
+  if(H!=null){
+    const bot=document.createElement('div');
+    bot.style.cssText='color:#8b949e;font-size:12px';
+    bot.textContent=H.toFixed(2);
+    div.appendChild(bot);
+  }
+  const obj=new THREE.CSS2DObject(div);
+  return obj;
+}
+
+// ── Parser ─────────────────────────────────────────────────────────────────────
 function parse(xml){
+  // clean up old labels
+  for(const l of labelObjects){l.obj.parent&&l.obj.parent.remove(l.obj);}
   for(const {mesh} of objs)scene.remove(mesh);
-  objs=[];hits=[];vis={};orig=null;
-  // reset zapis checkboxes
+  objs=[];labelObjects=[];hits=[];vis={};orig=null;
   zapisVis={i:true,u:true,r:true,d:false};
 
   const doc=new DOMParser().parseFromString(xml,'application/xml');
   const perr=doc.querySelector('parsererror');
   if(perr)throw new Error('XML parse error: '+perr.textContent.slice(0,80));
 
-  // Collect per layer+zapis
-  // C[layerKey][zapis] = {pts:[], lines:[]}
   const C={};
-  function bucket(k,z){
-    if(!C[k])C[k]={};
-    if(!C[k][z])C[k][z]={pts:[],lines:[]};
-    return C[k][z];
-  }
+  function bucket(k,z){if(!C[k])C[k]={};if(!C[k][z])C[k][z]={pts:[],lines:[]};return C[k][z];}
 
   const posN=doc.getElementsByTagNameNS(GML,'pos');
   for(let i=0;i<posN.length;i++){
@@ -398,7 +445,8 @@ function parse(xml){
     if(upTo(posN[i],META_SECTIONS))continue;
     const sec=dataSection(posN[i]);const k=sec?sec.localName:'_pt';
     const z=zapisObjektu(posN[i]);
-    bucket(k,z).pts.push({Y:v[0],X:v[1],H:v[2]||0});
+    const cislo=getCisloBodu(posN[i]);
+    bucket(k,z).pts.push({Y:v[0],X:v[1],H:v[2]||0,cislo});
   }
   const plN=doc.getElementsByTagNameNS(GML,'posList');
   for(let i=0;i<plN.length;i++){
@@ -409,20 +457,14 @@ function parse(xml){
     if(!orig)orig={Y:v[0],X:v[1],H:v[2]||0};
     const pts=[];for(let j=0;j+dim-1<v.length;j+=dim)pts.push({Y:v[j],X:v[j+1],H:v[j+2]||0});
     let k='_ln';
-    if(upTo(node,META_SECTIONS)){
-      // detect which meta section
-      for(const ms of META_SECTIONS){if(upTo(node,[ms])){k=ms;break;}}
-    } else {
-      const sec=dataSection(node);if(sec)k=sec.localName;
-    }
-    const z=zapisObjektu(node);
-    bucket(k,z).pts.length===0&&0; // just ensure bucket exists
-    bucket(k,z).lines.push(pts);
+    if(upTo(node,META_SECTIONS)){for(const ms of META_SECTIONS){if(upTo(node,[ms])){k=ms;break;}}}
+    else{const sec=dataSection(node);if(sec)k=sec.localName;}
+    bucket(k,zapisObjektu(node)).lines.push(pts);
   }
   if(!orig)throw new Error('Žádná data nenalezena.');
 
   let nP=0,nL=0;
-  const layerStats=[];   // {key, cfg, gt, counts:{i,u,r,d}}
+  const layerStats=[];
   const zapisFound=new Set();
 
   for(const [key,byZapis] of Object.entries(C)){
@@ -430,58 +472,53 @@ function parse(xml){
     const cfg=layerCfg(key,gt);
     const known=isKnown(key);
     const isMeta=META_SECTIONS.includes(key);
-
-    // Layer visibility: unknown or meta → off by default
-    vis[key] = known && !isMeta;
-
+    vis[key]=known&&!isMeta;
     const counts={};
+
     for(const [z,data] of Object.entries(byZapis)){
       zapisFound.add(z);
       counts[z]=(data.pts.length||0)+(data.lines.length||0);
-      const color = z==='d' ? 0x555555 : cfg.color;
-      const opacity = z==='d' ? 0.45 : 1;
+      const color=z==='d'?0x555555:cfg.color;
+      const opacity=z==='d'?0.45:1;
 
       if(data.pts.length){
         const verts=data.pts.map(p=>{
           const v=sc(p.Y,p.X,p.H);
           if(z!=='d')hits.push({pos3:v,raw:p,label:cfg.group+' · '+key});
+          // CSS2D label
+          const lbl=makeLabel(p.cislo,p.H,cfg.color);
+          lbl.position.copy(v);
+          lbl.visible=false;
+          scene.add(lbl);
+          labelObjects.push({obj:lbl,layerKey:key,zapis:z});
           return v;
         });
         const geo=new THREE.BufferGeometry().setFromPoints(verts);
         const mat=new THREE.PointsMaterial({color,size:cfg.sz||3,sizeAttenuation:false,opacity,transparent:opacity<1});
         const mesh=new THREE.Points(geo,mat);
-        scene.add(mesh);
-        objs.push({mesh,layerKey:key,zapis:z});
+        scene.add(mesh);objs.push({mesh,layerKey:key,zapis:z});
         nP+=data.pts.length;
       }
       if(data.lines.length){
         const verts=[];
         for(const line of data.lines){
-          for(let i=0;i<line.length-1;i++){
-            verts.push(sc(line[i].Y,line[i].X,line[i].H),sc(line[i+1].Y,line[i+1].X,line[i+1].H));
-          }
+          for(let i=0;i<line.length-1;i++)verts.push(sc(line[i].Y,line[i].X,line[i].H),sc(line[i+1].Y,line[i+1].X,line[i+1].H));
           nL++;
         }
         const geo=new THREE.BufferGeometry().setFromPoints(verts);
         const mat=new THREE.LineBasicMaterial({color,opacity,transparent:opacity<1});
         const mesh=new THREE.LineSegments(geo,mat);
-        scene.add(mesh);
-        objs.push({mesh,layerKey:key,zapis:z});
+        scene.add(mesh);objs.push({mesh,layerKey:key,zapis:z});
       }
     }
     layerStats.push({key,cfg,gt,counts,known,isMeta});
   }
 
-  // Apply initial visibility
   reapplyVisibility();
-
-  // ── Stats ──────────────────────────────────────────────────────────────────
   document.getElementById('stats').innerHTML=`<b>${nP}</b> bodů &nbsp;|&nbsp; <b>${nL}</b> linií`;
 
   // ── Legend ─────────────────────────────────────────────────────────────────
   const leg=document.getElementById('legend');leg.innerHTML='';
-
-  // Zapis checkboxes at top
   const zapLabels={i:'Vložené (i)',u:'Upravené (u)',r:'Referenční (r)',d:'Smazané (d)'};
   const zapColors={i:'#c9d1d9',u:'#93c5fd',r:'#86efac',d:'#555'};
   const zapOrder=['i','u','r','d'].filter(z=>zapisFound.has(z));
@@ -489,32 +526,20 @@ function parse(xml){
     const hdr=document.createElement('div');
     hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 3px;letter-spacing:.04em;text-transform:uppercase';
     hdr.textContent='Záznamy';leg.appendChild(hdr);
-    const zapRow=document.createElement('div');
-    zapRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:4px';
+    const zapRow=document.createElement('div');zapRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:4px';
     for(const z of zapOrder){
-      const wrap=document.createElement('label');
-      wrap.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px';
-      const cb=document.createElement('input');
-      cb.type='checkbox';cb.checked=zapisVis[z]!==false;
+      const wrap=document.createElement('label');wrap.style.cssText='display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px';
+      const cb=document.createElement('input');cb.type='checkbox';cb.checked=zapisVis[z]!==false;
       cb.style.cssText='cursor:pointer;accent-color:#58a6ff;flex-shrink:0';
-      cb.addEventListener('change',()=>{
-        zapisVis[z]=cb.checked;
-        reapplyVisibility();
-        // recompute fit box silently (don't move camera)
-      });
-      const sp=document.createElement('span');
-      sp.style.color=zapColors[z]||'#c9d1d9';
-      sp.textContent=zapLabels[z]||z;
-      wrap.appendChild(cb);wrap.appendChild(sp);
-      zapRow.appendChild(wrap);
+      cb.addEventListener('change',()=>{zapisVis[z]=cb.checked;reapplyVisibility();});
+      const sp=document.createElement('span');sp.style.color=zapColors[z]||'#c9d1d9';sp.textContent=zapLabels[z]||z;
+      wrap.appendChild(cb);wrap.appendChild(sp);zapRow.appendChild(wrap);
     }
     leg.appendChild(zapRow);
     const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #21262d;margin:4px 0 5px';leg.appendChild(sep);
   }
 
-  // Layer rows grouped
   layerStats.sort((a,b)=>{
-    // unknown last, then meta, then by group+key
     if(a.known!==b.known)return a.known?-1:1;
     if(a.isMeta!==b.isMeta)return a.isMeta?1:-1;
     return a.cfg.group.localeCompare(b.cfg.group)||a.key.localeCompare(b.key);
@@ -524,21 +549,15 @@ function parse(xml){
     const grp=cfg.group+(isMeta?' (meta)':!known?' (neznámé)':'');
     if(grp!==lastGroup){
       if(lastGroup!==null){const sep=document.createElement('div');sep.style.cssText='border-top:1px solid #21262d;margin:4px 0 2px';leg.appendChild(sep);}
-      const hdr=document.createElement('div');
-      hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 1px;letter-spacing:.04em;text-transform:uppercase';
-      hdr.textContent=grp;leg.appendChild(hdr);
-      lastGroup=grp;
+      const hdr=document.createElement('div');hdr.style.cssText='color:#6e7681;font-size:10px;margin:2px 0 1px;letter-spacing:.04em;text-transform:uppercase';
+      hdr.textContent=grp;leg.appendChild(hdr);lastGroup=grp;
     }
     const col='#'+new THREE.Color(cfg.color||0x888888).getHexString();
     const total=Object.values(counts).reduce((a,b)=>a+b,0);
     const row=document.createElement('div');row.className='legend-row';
     if(!vis[key])row.classList.add('off');
     row.innerHTML=`<span class="${gt==='ln'?'sw-line':'sw-dot'}" style="background:${col}"></span><span class="lbl">${key} <span style="color:#6e7681">(${total})</span></span>`;
-    row.addEventListener('click',()=>{
-      vis[key]=!vis[key];
-      reapplyVisibility();
-      row.classList.toggle('off',!vis[key]);
-    });
+    row.addEventListener('click',()=>{vis[key]=!vis[key];reapplyVisibility();row.classList.toggle('off',!vis[key]);});
     leg.appendChild(row);
   }
 
@@ -547,9 +566,9 @@ function parse(xml){
   document.getElementById('overlay').classList.add('gone');
 }
 
-// Fit uses only currently visible non-meta meshes
+// ── Camera ─────────────────────────────────────────────────────────────────────
 function fitCam(){
-  const b=computeFitBox(); if(!b)return;
+  const b=computeFitBox();if(!b)return;
   const c=new THREE.Vector3(),s=new THREE.Vector3();
   b.getCenter(c);b.getSize(s);
   const r=Math.max(s.x,s.z)*0.9+1;
@@ -559,7 +578,7 @@ function fitCam(){
   camera.updateProjectionMatrix();controls.update();
 }
 function topCam(){
-  const b=computeFitBox(); if(!b)return;
+  const b=computeFitBox();if(!b)return;
   const c=new THREE.Vector3(),s=new THREE.Vector3();
   b.getCenter(c);b.getSize(s);
   const d=Math.max(s.x,s.z)*1.2+1;
@@ -567,15 +586,18 @@ function topCam(){
   camera.position.set(c.x,d,c.z+0.001);controls.update();
 }
 
+// ── Zoom to cursor ─────────────────────────────────────────────────────────────
 const mouse=new THREE.Vector2(-9999,-9999);
 renderer.domElement.addEventListener('wheel',e=>{
   e.preventDefault();
   const dir=new THREE.Vector3(mouse.x,mouse.y,0.5).unproject(camera).sub(camera.position).normalize();
   const dist=camera.position.distanceTo(controls.target);
-  const move=dist*(e.deltaY>0?-0.05:0.05);
-  camera.position.addScaledVector(dir,move);controls.target.addScaledVector(dir,move);controls.update();
+  camera.position.addScaledVector(dir,dist*(e.deltaY>0?-0.05:0.05));
+  controls.target.addScaledVector(dir,dist*(e.deltaY>0?-0.05:0.05));
+  controls.update();
 },{passive:false});
 
+// ── Tooltip ────────────────────────────────────────────────────────────────────
 const caster=new THREE.Raycaster();
 window.addEventListener('mousemove',e=>{mouse.x=(e.clientX/innerWidth)*2-1;mouse.y=-(e.clientY/innerHeight)*2+1;});
 function updateTip(){
@@ -589,7 +611,15 @@ function updateTip(){
   if(best&&bd<thr){tt.style.display='block';tt.innerHTML=`<b>${best.label}</b><br>Y&nbsp;${best.raw.Y.toFixed(3)}<br>X&nbsp;${best.raw.X.toFixed(3)}<br>H&nbsp;${best.raw.H.toFixed(3)}`;}
   else tt.style.display='none';
 }
-(function anim(){requestAnimationFrame(anim);controls.update();updateTip();renderer.render(scene,camera);})();
+
+// ── Render loop ────────────────────────────────────────────────────────────────
+(function anim(){
+  requestAnimationFrame(anim);
+  controls.update();
+  updateTip();
+  renderer.render(scene,camera);
+  css2d.render(scene,camera);
+})();
 
 </script>
 </body>

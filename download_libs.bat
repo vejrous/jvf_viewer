@@ -13,6 +13,10 @@ echo Stahuji OrbitControls r128...
 powershell -Command "(New-Object Net.WebClient).DownloadFile('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js', 'libs\OrbitControls.js')"
 if exist libs\OrbitControls.js (echo   OK: libs\OrbitControls.js) else (echo   CHYBA: OrbitControls.js)
 
+echo Stahuji CSS2DRenderer r128...
+powershell -Command "(New-Object Net.WebClient).DownloadFile('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js', 'libs\CSS2DRenderer.js')"
+if exist libs\CSS2DRenderer.js (echo   OK: libs\CSS2DRenderer.js) else (echo   CHYBA: CSS2DRenderer.js)
+
 echo.
 echo Hotovo! Zkontrolujte slozku libs\
 pause
