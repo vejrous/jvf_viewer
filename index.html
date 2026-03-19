@@ -50,18 +50,13 @@
     <h3>Vrstvy <span style="color:#6e7681;font-weight:normal;font-size:10px">(klik = skrýt/zobrazit)</span></h3>
     <div id="legend"></div>
   </div>
-  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button id="btn-labels" onclick="toggleLabels()" title="Zobrazit/skrýt popisky bodů">Aa</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
+  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button id="btn-cislo" onclick="toggleCislo()" title="Číslo bodu">Aa</button><button id="btn-z" onclick="toggleZ()" title="Výška Z">Z</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
   <div class="panel" id="hint">Orbit: LMB &nbsp;|&nbsp; Pan: RMB &nbsp;|&nbsp; Zoom: kolečko<br>Hover = souřadnice</div>
 </div>
 <div id="about" onclick="if(event.target===this)this.style.display='none'">
   <div id="about-box">
     <span id="about-close" onclick="document.getElementById('about').style.display='none'">✕</span>
-    <h3>JVF DTM Viewer</h3>
-    <div><b>Autor:</b> Ing. Jiří Vejda</div>
-    <div><b>Telefon:</b> <a href="tel:+420773670515">+420 773 670 515</a></div>
-    <div><b>E-mail:</b> <a href="mailto:jiri.vejda@gmail.com">jiri.vejda@gmail.com</a></div>
-    <div><b>Web:</b> <a href="http://www.vejda.cz" target="_blank">www.vejda.cz</a></div>
-    <div style="margin-top:8px"><b>Adresa:</b><br>Nad školou 1163/5<br>Rousínov u Vyškova<br>683 01<br>Česká Republika</div>
+    <div id="about-content"></div>
   </div>
 </div>
 <div id="tooltip"></div>
@@ -69,6 +64,7 @@
 <script src="libs/OrbitControls.js"></script>
 <script src="libs/CSS2DRenderer.js"></script>
 
+<script src="about.js"></script>
 <script src="colors.js"></script>
 <script>
 // AUTO-GENERATED from JVF DTM XSD 1.4.3 — DO NOT EDIT (use MY_COLORS overrides)
@@ -348,10 +344,24 @@ function reapplyVisibility(){
   for(const o of objs) o.mesh.visible=meshShouldBeVisible(o);
   for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
 }
-function toggleLabels(){
-  labelsOn=!labelsOn;
-  document.getElementById('btn-labels').style.background=labelsOn?'#1c3a5e':'#21262d';
-  for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
+let showCislo=true, showZ=true;
+function applyLabelVis(){
+  labelsOn=showCislo||showZ;
+  for(const l of labelObjects){
+    l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
+    if(l.obj.userData.topEl) l.obj.userData.topEl.style.display=showCislo?'':'none';
+    if(l.obj.userData.botEl) l.obj.userData.botEl.style.display=showZ?'':'none';
+  }
+}
+function toggleCislo(){
+  showCislo=!showCislo;
+  document.getElementById('btn-cislo').style.background=showCislo?'#1c3a5e':'#21262d';
+  applyLabelVis();
+}
+function toggleZ(){
+  showZ=!showZ;
+  document.getElementById('btn-z').style.background=showZ?'#1c3a5e':'#21262d';
+  applyLabelVis();
 }
 
 function computeFitBox(){
@@ -407,19 +417,22 @@ function makeLabel(cislo, H, hexColor){
     transform:translate(-50%, -130%);
     text-shadow:0 0 3px #0d1117,0 0 3px #0d1117,0 0 3px #0d1117;
   `;
+  let topEl=null,botEl=null;
   if(cislo){
-    const top=document.createElement('div');
-    top.style.cssText=`color:${col};font-weight:bold;font-size:11px`;
-    top.textContent=cislo;
-    div.appendChild(top);
+    topEl=document.createElement('div');
+    topEl.style.cssText=`color:${col};font-weight:bold;font-size:11px`;
+    topEl.textContent=cislo;
+    div.appendChild(topEl);
   }
   if(H!=null){
-    const bot=document.createElement('div');
-    bot.style.cssText='color:#8b949e;font-size:12px';
-    bot.textContent=H.toFixed(2);
-    div.appendChild(bot);
+    botEl=document.createElement('div');
+    botEl.style.cssText='color:#8b949e;font-size:11px';
+    botEl.textContent=H.toFixed(2);
+    div.appendChild(botEl);
   }
   const obj=new THREE.CSS2DObject(div);
+  obj.userData.topEl=topEl;
+  obj.userData.botEl=botEl;
   return obj;
 }
 
@@ -612,7 +625,7 @@ function updateTip(){
   else tt.style.display='none';
 }
 
-// ── Render loop ────────────────────────────────────────────────────────────────
+// ── Render loop ───────────────────────────────────────────
 (function anim(){
   requestAnimationFrame(anim);
   controls.update();
@@ -621,6 +634,19 @@ function updateTip(){
   css2d.render(scene,camera);
 })();
 
+// Populate about box from about.js
+(function(){
+  const a=window.ABOUT||{};
+  const d=document.getElementById('about-content');
+  if(!d)return;
+  d.innerHTML=
+    '<h3>'+(a.title||'JVF DTM Viewer')+'</h3>'+
+    (a.autor?'<div><b>Autor:</b> '+a.autor+'</div>':'')+
+    (a.telefon?'<div><b>Telefon:</b> <a href="tel:'+a.telefon+'">'+a.telefon+'</a></div>':'')+
+    (a.email?'<div><b>E-mail:</b> <a href="mailto:'+a.email+'">'+a.email+'</a></div>':'')+
+    (a.web?'<div><b>Web:</b> <a href="http://'+a.web+'" target="_blank">'+a.web+'</a></div>':'')+
+    (a.adresa?'<div style="margin-top:8px"><b>Adresa:</b><br>'+a.adresa.replace(/\n/g,'<br>')+'</div>':'');
+})();
 </script>
 </body>
 </html>
