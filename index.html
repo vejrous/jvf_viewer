@@ -34,6 +34,13 @@
   #about-close:hover{color:#c9d1d9}
   #tooltip{position:absolute;bottom:12px;left:12px;display:none;background:rgba(13,17,23,.92);border:1px solid #30363d;border-radius:6px;padding:6px 11px;font-size:11px;pointer-events:none;z-index:10;color:#8b949e}
   #tooltip b{color:#c9d1d9}
+  #info{position:absolute;top:12px;right:12px;width:220px;background:rgba(13,17,23,.92);border:1px solid #30363d;border-radius:6px;padding:10px 13px;font-size:11px;line-height:1.7;color:#8b949e;z-index:10;display:none;pointer-events:auto}
+  #info h4{color:#58a6ff;font-size:11.5px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+  #info h4 span{cursor:pointer;color:#6e7681;font-size:14px;line-height:1}
+  #info h4 span:hover{color:#c9d1d9}
+  #info b{color:#c9d1d9}
+  #info .row{display:flex;justify-content:space-between;gap:8px;border-top:1px solid #21262d;padding-top:2px;margin-top:2px}
+  #info .row:first-of-type{border-top:none;padding-top:0;margin-top:0}
   #fname{position:absolute;top:12px;right:12px;background:rgba(13,17,23,.75);border:1px solid #30363d;border-radius:5px;padding:4px 10px;font-size:11px;color:#6e7681;z-index:10;pointer-events:none;max-width:360px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 </style>
 </head>
@@ -50,21 +57,26 @@
     <h3>Vrstvy <span style="color:#6e7681;font-weight:normal;font-size:10px">(klik = skrýt/zobrazit)</span></h3>
     <div id="legend"></div>
   </div>
-  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button id="btn-cislo" onclick="toggleCislo()" title="Číslo bodu">Aa</button><button id="btn-z" onclick="toggleZ()" title="Výška Z">Z</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
+  <div class="panel"><div class="btn-row"><button onclick="fitCam()">⟳ Fit</button><button onclick="topCam()">⊞ Shora</button><button id="btn-labels" onclick="toggleLabels()" title="Zobrazit/skrýt popisky bodů">Aa</button><button onclick="document.getElementById('about').style.display='flex'" style="margin-left:auto">ℹ</button></div></div>
   <div class="panel" id="hint">Orbit: LMB &nbsp;|&nbsp; Pan: RMB &nbsp;|&nbsp; Zoom: kolečko<br>Hover = souřadnice</div>
 </div>
 <div id="about" onclick="if(event.target===this)this.style.display='none'">
   <div id="about-box">
     <span id="about-close" onclick="document.getElementById('about').style.display='none'">✕</span>
-    <div id="about-content"></div>
+    <h3>JVF DTM Viewer</h3>
+    <div><b>Autor:</b> Ing. Jiří Vejda</div>
+    <div><b>Telefon:</b> <a href="tel:+420773670515">+420 773 670 515</a></div>
+    <div><b>E-mail:</b> <a href="/cdn-cgi/l/email-protection#afc5c6ddc681d9cac5cbceefc8c2cec6c381ccc0c2"><span class="__cf_email__" data-cfemail="bdd7d4cfd493cbd8d7d9dcfddad0dcd4d193ded2d0">[email&#160;protected]</span></a></div>
+    <div><b>Web:</b> <a href="http://www.vejda.cz" target="_blank">www.vejda.cz</a></div>
+    <div style="margin-top:8px"><b>Adresa:</b><br>Nad školou 1163/5<br>Rousínov u Vyškova<br>683 01<br>Česká Republika</div>
   </div>
 </div>
 <div id="tooltip"></div>
-<script src="libs/three.min.js"></script>
+<div id="info"><h4><span id="info-title"></span><span onclick="document.getElementById('info').style.display='none'">✕</span></h4><div id="info-body"></div></div>
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="libs/three.min.js"></script>
 <script src="libs/OrbitControls.js"></script>
 <script src="libs/CSS2DRenderer.js"></script>
 
-<script src="about.js"></script>
 <script src="colors.js"></script>
 <script>
 // AUTO-GENERATED from JVF DTM XSD 1.4.3 — DO NOT EDIT (use MY_COLORS overrides)
@@ -344,24 +356,10 @@ function reapplyVisibility(){
   for(const o of objs) o.mesh.visible=meshShouldBeVisible(o);
   for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
 }
-let showCislo=true, showZ=true;
-function applyLabelVis(){
-  labelsOn=showCislo||showZ;
-  for(const l of labelObjects){
-    l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
-    if(l.obj.userData.topEl) l.obj.userData.topEl.style.display=showCislo?'':'none';
-    if(l.obj.userData.botEl) l.obj.userData.botEl.style.display=showZ?'':'none';
-  }
-}
-function toggleCislo(){
-  showCislo=!showCislo;
-  document.getElementById('btn-cislo').style.background=showCislo?'#1c3a5e':'#21262d';
-  applyLabelVis();
-}
-function toggleZ(){
-  showZ=!showZ;
-  document.getElementById('btn-z').style.background=showZ?'#1c3a5e':'#21262d';
-  applyLabelVis();
+function toggleLabels(){
+  labelsOn=!labelsOn;
+  document.getElementById('btn-labels').style.background=labelsOn?'#1c3a5e':'#21262d';
+  for(const l of labelObjects) l.obj.visible=labelsOn&&vis[l.layerKey]&&zapisVis[l.zapis];
 }
 
 function computeFitBox(){
@@ -395,11 +393,22 @@ function zapisObjektu(node){
   for(const c of z.childNodes)if(c.localName==='ZapisObjektu')return c.textContent.trim();
   return 'i';
 }
+function findEl(node,name){if(node.nodeType===1&&node.localName===name)return node;for(const c of node.childNodes){const r=findEl(c,name);if(r)return r;}return null;}
 function getCisloBodu(posNode){
   const zaznam=upTo(posNode,['ZaznamObjektu']);if(!zaznam)return null;
-  function find(n,name){if(n.nodeType===1&&n.localName===name)return n;for(const c of n.childNodes){const r=find(c,name);if(r)return r;}return null;}
-  const el=find(zaznam,'CisloBodu');
+  const el=findEl(zaznam,'CisloBodu');
   return el?el.textContent.trim().replace(/^0+/,'')||null:null;
+}
+function getAttrs(zaznam){
+  if(!zaznam)return {};
+  const want=['CisloBodu','ZapisObjektu','TridaPresnostiPoloha','TridaPresnostiVyska',
+    'ZpusobPorizeniPB_ZPS','ZpusobPorizeniZPS','ID','IDZmeny','DatumVkladu','VkladOsoba'];
+  const out={};
+  for(const name of want){
+    const el=findEl(zaznam,name);
+    if(el){const v=el.textContent.trim();if(v)out[name]=v;}
+  }
+  return out;
 }
 function sc(Y,X,H){return new THREE.Vector3(Y-orig.Y,(H||0)-orig.H,-(X-orig.X));}
 
@@ -417,22 +426,19 @@ function makeLabel(cislo, H, hexColor){
     transform:translate(-50%, -130%);
     text-shadow:0 0 3px #0d1117,0 0 3px #0d1117,0 0 3px #0d1117;
   `;
-  let topEl=null,botEl=null;
   if(cislo){
-    topEl=document.createElement('div');
-    topEl.style.cssText=`color:${col};font-weight:bold;font-size:11px`;
-    topEl.textContent=cislo;
-    div.appendChild(topEl);
+    const top=document.createElement('div');
+    top.style.cssText=`color:${col};font-weight:bold;font-size:11px`;
+    top.textContent=cislo;
+    div.appendChild(top);
   }
   if(H!=null){
-    botEl=document.createElement('div');
-    botEl.style.cssText='color:#8b949e;font-size:11px';
-    botEl.textContent=H.toFixed(2);
-    div.appendChild(botEl);
+    const bot=document.createElement('div');
+    bot.style.cssText='color:#8b949e;font-size:12px';
+    bot.textContent=H.toFixed(2);
+    div.appendChild(bot);
   }
   const obj=new THREE.CSS2DObject(div);
-  obj.userData.topEl=topEl;
-  obj.userData.botEl=botEl;
   return obj;
 }
 
@@ -459,7 +465,9 @@ function parse(xml){
     const sec=dataSection(posN[i]);const k=sec?sec.localName:'_pt';
     const z=zapisObjektu(posN[i]);
     const cislo=getCisloBodu(posN[i]);
-    bucket(k,z).pts.push({Y:v[0],X:v[1],H:v[2]||0,cislo});
+    const zaznam=upTo(posN[i],['ZaznamObjektu']);
+    const attrs=getAttrs(zaznam);
+    bucket(k,z).pts.push({Y:v[0],X:v[1],H:v[2]||0,cislo,attrs,layerKey:k,zapis:z});
   }
   const plN=doc.getElementsByTagNameNS(GML,'posList');
   for(let i=0;i<plN.length;i++){
@@ -472,7 +480,13 @@ function parse(xml){
     let k='_ln';
     if(upTo(node,META_SECTIONS)){for(const ms of META_SECTIONS){if(upTo(node,[ms])){k=ms;break;}}}
     else{const sec=dataSection(node);if(sec)k=sec.localName;}
-    bucket(k,zapisObjektu(node)).lines.push(pts);
+    const zln=zapisObjektu(node);
+    const zaznamLn=upTo(node,['ZaznamObjektu']);
+    const attrsLn=getAttrs(zaznamLn);
+    // compute 2D length
+    let len2d=0;
+    for(let i=0;i<pts.length-1;i++){const dx=pts[i+1].Y-pts[i].Y,dy=pts[i+1].X-pts[i].X;len2d+=Math.sqrt(dx*dx+dy*dy);}
+    bucket(k,zln).lines.push({pts,attrs:attrsLn,layerKey:k,zapis:zln,len2d});
   }
   if(!orig)throw new Error('Žádná data nenalezena.');
 
@@ -497,7 +511,7 @@ function parse(xml){
       if(data.pts.length){
         const verts=data.pts.map(p=>{
           const v=sc(p.Y,p.X,p.H);
-          if(z!=='d')hits.push({pos3:v,raw:p,label:cfg.group+' · '+key});
+          if(z!=='d')hits.push({pos3:v,raw:p,label:cfg.group+' · '+key,type:'pt'});
           // CSS2D label
           const lbl=makeLabel(p.cislo,p.H,cfg.color);
           lbl.position.copy(v);
@@ -514,7 +528,8 @@ function parse(xml){
       }
       if(data.lines.length){
         const verts=[];
-        for(const line of data.lines){
+        for(const lineObj of data.lines){
+          const line=lineObj.pts||lineObj;
           for(let i=0;i<line.length-1;i++)verts.push(sc(line[i].Y,line[i].X,line[i].H),sc(line[i+1].Y,line[i+1].X,line[i+1].H));
           nL++;
         }
@@ -522,6 +537,18 @@ function parse(xml){
         const mat=new THREE.LineBasicMaterial({color,opacity,transparent:opacity<1});
         const mesh=new THREE.LineSegments(geo,mat);
         scene.add(mesh);objs.push({mesh,layerKey:key,zapis:z});
+        // line centroid hits for click inspect
+        if(z!=='d'){
+          for(const lineObj of data.lines){
+            const line=lineObj.pts||lineObj;
+            let cy=0,cx=0,ch=0;
+            for(const p of line){cy+=p.Y;cx+=p.X;ch+=p.H;}
+            cy/=line.length;cx/=line.length;ch/=line.length;
+            hits.push({pos3:sc(cy,cx,ch),raw:{Y:cy,X:cx,H:ch},label:cfg.group+' · '+key,
+              type:'ln',attrs:lineObj.attrs||{},layerKey:key,zapis:z,
+              len2d:lineObj.len2d||0,npts:line.length});
+          }
+        }
       }
     }
     layerStats.push({key,cfg,gt,counts,known,isMeta});
@@ -626,12 +653,64 @@ function updateTip(){
 }
 
 // ── Render loop ───────────────────────────────────────────
+// ── Info panel ─────────────────────────────────────────────────────────────────
+const ATTR_LABELS={
+  CisloBodu:'Číslo bodu', ZapisObjektu:'Zápis',
+  TridaPresnostiPoloha:'Třída poloha', TridaPresnostiVyska:'Třída výška',
+  ZpusobPorizeniPB_ZPS:'Způsob pořízení', ZpusobPorizeniZPS:'Způsob pořízení',
+  ID:'ID', IDZmeny:'ID změny', DatumVkladu:'Datum vkladu', VkladOsoba:'Vložil',
+};
+function showInfo(h){
+  const panel=document.getElementById('info');
+  document.getElementById('info-title').textContent=h.label;
+  let html='';
+  const addRow=(l,v)=>{html+=`<div class="row"><span>${l}</span><b>${v}</b></div>`;};
+  if(h.type==='pt'){
+    addRow('Y',h.raw.Y.toFixed(3));
+    addRow('X',h.raw.X.toFixed(3));
+    addRow('H',h.raw.H.toFixed(3));
+  } else {
+    addRow('Y střed',h.raw.Y.toFixed(3));
+    addRow('X střed',h.raw.X.toFixed(3));
+    addRow('Délka 2D',h.len2d.toFixed(3)+' m');
+    addRow('Vrcholů',h.npts);
+  }
+  const attrs=h.attrs||{};
+  for(const [k,v] of Object.entries(attrs)){
+    const lbl=ATTR_LABELS[k]||k;
+    let val=v;
+    if(k==='CisloBodu') val=v.replace(/^0+/,'')||v;
+    if(k==='DatumVkladu') val=v.replace('T',' ').slice(0,16);
+    addRow(lbl,val);
+  }
+  document.getElementById('info-body').innerHTML=html;
+  panel.style.display='block';
+}
+
+renderer.domElement.addEventListener('click',e=>{
+  const rect=renderer.domElement.getBoundingClientRect();
+  const mx=((e.clientX-rect.left)/rect.width)*2-1;
+  const my=-((e.clientY-rect.top)/rect.height)*2+1;
+  const ray=new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2(mx,my),camera);
+  const b=computeFitBox();if(!b)return;
+  const sz=new THREE.Vector3();b.getSize(sz);
+  const thr=sz.length()*0.02;
+  let best=null,bd=Infinity;
+  for(const h of hits){
+    if(!vis[h.layerKey])continue;
+    const d=ray.ray.distanceToPoint(h.pos3);
+    if(d<bd){bd=d;best=h;}
+  }
+  if(best&&bd<thr) showInfo(best);
+  else document.getElementById('info').style.display='none';
+});
+
 (function anim(){
   requestAnimationFrame(anim);
   controls.update();
-  // Keep far clip well beyond current camera distance so nothing clips on zoom out
   const dist=camera.position.length();
-  camera.far=Math.max(dist*10, 1000);
+  camera.far=Math.max(dist*10,1000);
   camera.updateProjectionMatrix();
   updateTip();
   renderer.render(scene,camera);
