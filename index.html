@@ -447,6 +447,7 @@ function parse(xml){
   // clean up old labels
   for(const l of labelObjects){l.obj.parent&&l.obj.parent.remove(l.obj);}
   for(const {mesh} of objs)scene.remove(mesh);
+  clearHighlight();
   objs=[];labelObjects=[];hits=[];vis={};orig=null;
   zapisVis={i:true,u:true,r:true,d:false};
 
@@ -544,9 +545,12 @@ function parse(xml){
             let cy=0,cx=0,ch=0;
             for(const p of line){cy+=p.Y;cx+=p.X;ch+=p.H;}
             cy/=line.length;cx/=line.length;ch/=line.length;
+            // build segment verts for highlight
+            const sv=[];
+            for(let i=0;i<line.length-1;i++){sv.push(sc(line[i].Y,line[i].X,line[i].H),sc(line[i+1].Y,line[i+1].X,line[i+1].H));}
             hits.push({pos3:sc(cy,cx,ch),raw:{Y:cy,X:cx,H:ch},label:cfg.group+' · '+key,
               type:'ln',attrs:lineObj.attrs||{},layerKey:key,zapis:z,
-              len2d:lineObj.len2d||0,npts:line.length});
+              len2d:lineObj.len2d||0,npts:line.length,selVerts:sv});
           }
         }
       }
@@ -653,6 +657,29 @@ function updateTip(){
 }
 
 // ── Render loop ───────────────────────────────────────────
+// ── Highlight ──────────────────────────────────────────────────────────────────
+let hlPoint=null, hlLine=null;
+
+function clearHighlight(){
+  if(hlPoint){scene.remove(hlPoint);hlPoint.geometry.dispose();hlPoint.material.dispose();hlPoint=null;}
+  if(hlLine){scene.remove(hlLine);hlLine.geometry.dispose();hlLine.material.dispose();hlLine=null;}
+}
+
+function highlightHit(h){
+  clearHighlight();
+  if(h.type==='pt'){
+    const geo=new THREE.BufferGeometry().setFromPoints([h.pos3]);
+    const mat=new THREE.PointsMaterial({color:0xffffff,size:14,sizeAttenuation:false,depthTest:false,transparent:true,opacity:0.9});
+    hlPoint=new THREE.Points(geo,mat);
+    scene.add(hlPoint);
+  } else if(h.selVerts){
+    const geo=new THREE.BufferGeometry().setFromPoints(h.selVerts);
+    const mat=new THREE.LineBasicMaterial({color:0xffffff,depthTest:false,transparent:true,opacity:0.85});
+    hlLine=new THREE.LineSegments(geo,mat);
+    scene.add(hlLine);
+  }
+}
+
 // ── Info panel ─────────────────────────────────────────────────────────────────
 const ATTR_LABELS={
   CisloBodu:'Číslo bodu', ZapisObjektu:'Zápis',
@@ -685,25 +712,38 @@ function showInfo(h){
   }
   document.getElementById('info-body').innerHTML=html;
   panel.style.display='block';
+  highlightHit(h);
 }
 
 renderer.domElement.addEventListener('click',e=>{
-  const rect=renderer.domElement.getBoundingClientRect();
-  const mx=((e.clientX-rect.left)/rect.width)*2-1;
-  const my=-((e.clientY-rect.top)/rect.height)*2+1;
   const ray=new THREE.Raycaster();
-  ray.setFromCamera(new THREE.Vector2(mx,my),camera);
+  ray.setFromCamera(mouse,camera);
   const b=computeFitBox();if(!b)return;
   const sz=new THREE.Vector3();b.getSize(sz);
-  const thr=sz.length()*0.02;
+  const thrPt=sz.length()*0.03;
+  const thrLn=sz.length()*0.05;
+
   let best=null,bd=Infinity;
+
+  // 1st pass: points — same method as working tooltip
   for(const h of hits){
+    if(h.type!=='pt')continue;
     if(!vis[h.layerKey])continue;
     const d=ray.ray.distanceToPoint(h.pos3);
-    if(d<bd){bd=d;best=h;}
+    if(d<thrPt&&d<bd){bd=d;best=h;}
   }
-  if(best&&bd<thr) showInfo(best);
-  else document.getElementById('info').style.display='none';
+  // 2nd pass: lines only if no point found
+  if(!best){
+    bd=Infinity;
+    for(const h of hits){
+      if(h.type!=='ln')continue;
+      if(!vis[h.layerKey])continue;
+      const d=ray.ray.distanceToPoint(h.pos3);
+      if(d<thrLn&&d<bd){bd=d;best=h;}
+    }
+  }
+  if(best) showInfo(best);
+  else { document.getElementById('info').style.display='none'; clearHighlight(); }
 });
 
 (function anim(){
