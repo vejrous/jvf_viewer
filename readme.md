@@ -12,23 +12,26 @@ Pracuje lokálně bez serveru, bez instalace.
     index.html          hlavní soubor, otevřít v prohlížeči
     colors.js           nastavení barev vrstev
     about.js            kontaktní údaje (o aplikaci)
+    download_libs.bat   stažení knihoven (pouze pokud chybí složka libs/)
     libs/
         three.min.js        knihovna 3D grafiky
         OrbitControls.js    ovládání kamery
         CSS2DRenderer.js    vykreslování popisků bodů
 
 
-## První spuštění
+## Spuštění
 
-1. Spustit download_libs.bat
-   - stáhne three.min.js, OrbitControls.js a CSS2DRenderer.js do složky libs/
-   - potřebuje připojení k internetu (pouze jednou)
+1. Otevřít index.html v prohlížeči (Chrome, Edge, Firefox)
 
-2. Otevřít index.html v prohlížeči (Chrome, Edge, Firefox)
-
-3. Otevřít JVF soubor
+2. Otevřít JVF soubor
    - kliknout na tlačítko "Otevřít JVF XML soubor"
    - nebo přetáhnout soubor do okna
+
+Složka libs/ je součástí distribuce – žádná instalace není potřeba.
+
+Pokud složka libs/ chybí nebo jsou soubory poškozeny:
+   - spustit download_libs.bat
+   - potřebuje připojení k internetu (stáhne knihovny z cdn.jsdelivr.net)
 
 
 ## Ovládání
@@ -38,6 +41,7 @@ Pracuje lokálně bez serveru, bez instalace.
     Kolečko myši         přiblížení / oddálení ke kurzoru
     Fit                  nastaví pohled na viditelná data
     Top                  pohled kolmo shora
+    Klik na prvek        zobrazí detail v info panelu (vpravo nahoře)
 
 
 ## Popisky bodů
@@ -45,6 +49,17 @@ Pracuje lokálně bez serveru, bez instalace.
 Tlačítka Aa a Z v panelu Body zapínají a vypínají zobrazení
 čísla bodu a výšky Z nad každým bodem ve scéně.
 Každé tlačítko funguje nezávisle.
+
+
+## Info panel
+
+Kliknutím na bod nebo linii se zobrazí detail prvku:
+
+    Body    číslo bodu, Y/X/H, třída přesnosti, způsob pořízení,
+            ID, datum vkladu, vložil
+    Linie   délka 2D, počet vrcholů, atributy záznamu
+
+Panel zavřete tlačítkem ✕ nebo kliknutím do prázdného prostoru.
 
 
 ## Legenda
