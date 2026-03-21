@@ -1,0 +1,45 @@
+name: Build Release ZIP
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers on tags like v1.0.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare Release Folder
+        run: |
+          # 1. Create a temporary staging directory
+          mkdir staging
+          
+          # 2. Copy the libs directory
+          if [ -d "libs" ]; then cp -r libs staging/; fi
+          
+          # 3. Copy all files from the root (excluding folders and hidden files)
+          # This finds files in the root (-maxdepth 1) and copies them
+          find . -maxdepth 1 -type f -not -path '*/.*' -exec cp {} staging/ \;
+          
+          # 4. Remove the workflow file itself if it was copied
+          rm -rf staging/.github
+
+      - name: Create ZIP Archive
+        run: |
+          # Get the tag name (e.g., v1.0.1)
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          # Zip the contents of the staging folder
+          cd staging && zip -r ../jvf_viewer-$TAG_NAME.zip .
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: jvf_viewer-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
